@@ -11,36 +11,36 @@ namespace Editor
 {
     public class InstallerWindow : EditorWindow
     {
-        // Package IDs as they appear in their package.json files
+        // EDIA package IDs (as in their package.json)
         private const string PackageNameUxf = "com.edia.uxf";
         private const string PackageNameCore = "com.edia.core";
         private const string PackageNameLsl = "com.edia.lsl";
         private const string PackageNameEye = "com.edia.eye";
 
-        // Unity packages for samples
+        // Unity XR packages
         private const string PackageNameXri = "com.unity.xr.interaction.toolkit";
         private const string PackageNameXrHands = "com.unity.xr.hands";
 
-        // Sample names (as seen in Package Manager → Samples)
+        // XR samples
         private const string XriSampleStarterAssets = "Starter Assets";
         private const string XriSampleHandsInteractionDemo = "Hands Interaction Demo";
         private const string XrHandsSampleHandVisualizer = "HandVisualizer";
 
-        // Base Git URLs (without version/branch part)
+        // EDIA Git base URLs (without version/branch part)
         private const string GitBaseUxf = "https://github.com/edia-toolbox/edia_uxf.git?path=/Assets/com.edia.uxf#";
         private const string GitBaseCore = "https://github.com/edia-toolbox/edia_core.git?path=/Assets/com.edia.core#";
         private const string GitBaseLsl = "https://github.com/edia-toolbox/edia_lsl.git?path=/Assets/com.edia.lsl#";
         private const string GitBaseEye = "https://github.com/edia-toolbox/edia_eye.git?path=/Assets/com.edia.eye#";
 
-        // Package Manager requests
+        // Package Manager requests (for EDIA queue)
         private static AddRequest _addRequest;
         private static ListRequest _listRequest;
 
-        // Global state
-        private static bool _isInstalling;
+        // Global state (EDIA queue only)
+        private static bool _isInstallingEdia;
         private static string _statusMessage = "Idle";
 
-        // UI toggles and versions
+        // UI toggles and versions (EDIA)
         private static bool _installCore;
         private static bool _installUxf;
         private static bool _installLsl;
@@ -50,7 +50,7 @@ namespace Editor
         private static string _lslVersion = "main";
         private static string _eyeVersion = "main";
 
-        // Data structure for queued installs
+        // Data structure for queued EDIA installs
         private struct PackageToInstall
         {
             public string PackageName;
@@ -72,7 +72,7 @@ namespace Editor
         public static void ShowWindow()
         {
             var window = GetWindow<InstallerWindow>("EDIA Installer");
-            window.minSize = new Vector2(500, 60);
+            window.minSize = new Vector2(500, 120);
         }
 
         private void OnGUI()
@@ -80,13 +80,108 @@ namespace Editor
             EditorGUILayout.LabelField("EDIA Package Installer", EditorStyles.boldLabel);
             EditorGUILayout.Space();
 
-            EditorGUI.BeginDisabledGroup(_isInstalling);
+            // -------- SECTION 1: XR Dependencies --------
+            DrawXrSection();
+
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("", GUI.skin.horizontalSlider); // separator line
+            EditorGUILayout.Space();
+
+            // -------- SECTION 2: EDIA Packages --------
+            DrawEdiaSection();
+
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Status: " + _statusMessage);
+        }
+
+        // ----- XR SECTION -----
+        private void DrawXrSection()
+        {
+            EditorGUILayout.LabelField("1) XR Dependencies", EditorStyles.boldLabel);
+
+            bool xriInstalled = IsPackageInstalled(PackageNameXri);
+            bool xrHandsInstalled = IsPackageInstalled(PackageNameXrHands);
+            bool xrReady = xriInstalled && xrHandsInstalled;
+
+            EditorGUILayout.LabelField(
+                $"XR Interaction Toolkit: {(xriInstalled ? "Installed" : "Not Installed")}");
+            EditorGUILayout.LabelField(
+                $"XR Hands: {(xrHandsInstalled ? "Installed" : "Not Installed")}");
+
+            EditorGUILayout.Space();
+
+            EditorGUI.BeginDisabledGroup(_isInstallingEdia);
+            if (GUILayout.Button("Install / Update XR Packages (XRI + XR Hands)", GUILayout.Height(24)))
+            {
+                InstallXrPackages();
+            }
+            EditorGUI.EndDisabledGroup();
+
+            if (!xrReady)
+            {
+                EditorGUILayout.HelpBox(
+                    "Install XR Interaction Toolkit and XR Hands first. " +
+                    "You can then install EDIA packages and XR samples.",
+                    MessageType.Info);
+            }
+        }
+
+        private static bool IsPackageInstalled(string packageName)
+        {
+            // Uses PackageInfo to check synchronously if the package exists
+            var info = UnityEditor.PackageManager.PackageInfo.FindForAssetPath("Packages/" + packageName);
+            return info != null;
+        }
+
+        private void InstallXrPackages()
+        {
+            bool needXri = !IsPackageInstalled(PackageNameXri);
+            bool needHands = !IsPackageInstalled(PackageNameXrHands);
+
+            if (!needXri && !needHands)
+            {
+                _statusMessage = "XR packages are already installed.";
+                Repaint();
+                return;
+            }
+
+            if (needXri)
+            {
+                Debug.Log("[EDIA Installer] Requesting install of XR Interaction Toolkit...");
+                Client.Add(PackageNameXri); // async; we don't track completion in code
+            }
+
+            if (needHands)
+            {
+                Debug.Log("[EDIA Installer] Requesting install of XR Hands...");
+                Client.Add(PackageNameXrHands);
+            }
+
+            _statusMessage = "Requested XR packages via Package Manager. Unity may reload while importing.";
+            Repaint();
+        }
+
+        // ----- EDIA SECTION -----
+        private void DrawEdiaSection()
+        {
+            EditorGUILayout.LabelField("2) EDIA Packages", EditorStyles.boldLabel);
+
+            bool xrReady = IsPackageInstalled(PackageNameXri) && IsPackageInstalled(PackageNameXrHands);
+
+            if (!xrReady)
+            {
+                EditorGUILayout.HelpBox(
+                    "XR Interaction Toolkit and XR Hands must be installed before installing EDIA packages.",
+                    MessageType.Warning);
+            }
 
             // Ensure we have defaults (avoid resetting every frame)
             if (string.IsNullOrEmpty(_uxfVersion)) _uxfVersion = "main";
             if (string.IsNullOrEmpty(_coreVersion)) _coreVersion = "main";
             if (string.IsNullOrEmpty(_lslVersion)) _lslVersion = "main";
             if (string.IsNullOrEmpty(_eyeVersion)) _eyeVersion = "main";
+
+            EditorGUI.BeginDisabledGroup(_isInstallingEdia || !xrReady);
 
             // UXF row
             EditorGUILayout.BeginHorizontal();
@@ -112,30 +207,27 @@ namespace Editor
             _eyeVersion = EditorGUILayout.TextField("version", _eyeVersion);
             EditorGUILayout.EndHorizontal();
 
-            // Dependency rules
+            // Dependency rules inside EDIA:
             if (_installCore) _installUxf = true;
             if (_installLsl) _installCore = true;
             if (_installEye) _installCore = true;
 
             EditorGUILayout.Space();
 
-            if (GUILayout.Button("Install Packages", GUILayout.Height(30)))
+            if (GUILayout.Button("Install EDIA Packages", GUILayout.Height(30)))
             {
-                StartInstalls();
+                StartEdiaInstalls();
             }
 
             EditorGUI.EndDisabledGroup();
-
-            EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Status: " + _statusMessage);
         }
 
-        // Entry point when the button is pressed
-        private void StartInstalls()
+        // Entry point when EDIA button is pressed
+        private void StartEdiaInstalls()
         {
-            if (_isInstalling)
+            if (_isInstallingEdia)
             {
-                _statusMessage = "Already installing. Please wait.";
+                _statusMessage = "Already installing EDIA packages. Please wait.";
                 Repaint();
                 return;
             }
@@ -155,20 +247,6 @@ namespace Editor
 
             if (_installCore)
             {
-                // XR Interaction Toolkit
-                _installQueue.Enqueue(new PackageToInstall(
-                    PackageNameXri,
-                    PackageNameXri,               // Client.Add(name) works for registry packages
-                    "XR Interaction Toolkit"
-                ));
-
-                // XR Hands
-                _installQueue.Enqueue(new PackageToInstall(
-                    PackageNameXrHands,
-                    PackageNameXrHands,
-                    "XR Hands"
-                ));
-                
                 string url = GitBaseCore + _coreVersion;
                 _installQueue.Enqueue(new PackageToInstall(
                     PackageNameCore,
@@ -179,7 +257,7 @@ namespace Editor
 
             if (_installLsl)
             {
-                string url = GitBaseLsl + _lslVersion; // fixed: use _lslVersion
+                string url = GitBaseLsl + _lslVersion;
                 _installQueue.Enqueue(new PackageToInstall(
                     PackageNameLsl,
                     url,
@@ -204,8 +282,8 @@ namespace Editor
                 return;
             }
 
-            _statusMessage = "Checking already installed packages...";
-            _isInstalling = true;
+            _statusMessage = "Checking already installed EDIA packages...";
+            _isInstallingEdia = true;
 
             // Ask Package Manager for the list of installed packages
             _listRequest = Client.List(true);
@@ -225,7 +303,7 @@ namespace Editor
             if (_listRequest.Status != StatusCode.Success)
             {
                 Debug.LogError("[EDIA Installer] Failed to list packages: " + _listRequest.Error);
-                _isInstalling = false;
+                _isInstallingEdia = false;
                 _statusMessage = "Failed to list packages. See Console.";
                 GetWindowIfOpen()?.Repaint();
                 return;
@@ -250,8 +328,8 @@ namespace Editor
 
             if (_installQueue.Count == 0)
             {
-                _statusMessage = "All selected packages are already installed.";
-                _isInstalling = false;
+                _statusMessage = "All selected EDIA packages are already installed.";
+                _isInstallingEdia = false;
                 GetWindowIfOpen()?.Repaint();
                 return;
             }
@@ -264,8 +342,8 @@ namespace Editor
         {
             if (_installQueue.Count == 0)
             {
-                _statusMessage = "All installations completed.";
-                _isInstalling = false;
+                _statusMessage = "All EDIA installations completed.";
+                _isInstallingEdia = false;
                 GetWindowIfOpen()?.Repaint();
                 return;
             }
@@ -284,7 +362,7 @@ namespace Editor
             {
                 Debug.LogError("[EDIA Installer] Exception while starting install:\n" + ex);
                 _statusMessage = "Error starting install. See Console.";
-                _isInstalling = false;
+                _isInstallingEdia = false;
             }
 
             GetWindowIfOpen()?.Repaint();
@@ -295,7 +373,7 @@ namespace Editor
             if (_addRequest == null)
             {
                 EditorApplication.update -= PackageProgress;
-                _isInstalling = false;
+                _isInstallingEdia = false;
                 _statusMessage = "No active request.";
                 GetWindowIfOpen()?.Repaint();
                 return;
@@ -315,6 +393,12 @@ namespace Editor
                 if (_currentPackage.PackageName == PackageNameCore)
                 {
                     TryImportSampleByName(
+                        PackageNameXrHands,
+                        XrHandsSampleHandVisualizer,
+                        "XR Hands Hand Visualizer"
+                    );
+                    
+                    TryImportSampleByName(
                         PackageNameXri,
                         XriSampleStarterAssets,
                         "XRI Starter Assets"
@@ -324,12 +408,6 @@ namespace Editor
                         PackageNameXri,
                         XriSampleHandsInteractionDemo,
                         "XRI Hands Interaction Demo"
-                    );
-
-                    TryImportSampleByName(
-                        PackageNameXrHands,
-                        XrHandsSampleHandVisualizer,
-                        "XR Hands Hand Visualizer"
                     );
                 }
             }
@@ -352,7 +430,7 @@ namespace Editor
         {
             try
             {
-                var samples = Sample.FindByPackage(packageName, null); // null = current installed version
+                var samples = Sample.FindByPackage(packageName, null); // use current installed version
 
                 if (samples == null || !samples.Any())
                 {
