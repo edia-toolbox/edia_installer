@@ -9,7 +9,7 @@ using UnityEngine;
 
 namespace Editor
 {
-    public class InstallerWindow : EditorWindow
+    public class EdiaInstaller : EditorWindow
     {
         // EDIA package IDs (as in their package.json)
         private const string PackageNameUxf = "com.edia.uxf";
@@ -49,7 +49,42 @@ namespace Editor
         private static string _coreVersion = "main";
         private static string _lslVersion = "main";
         private static string _eyeVersion = "main";
+        private static string _uxfVersionInstalled;
+        private static string _coreVersionInstalled;
+        private static string _lslVersionInstalled;
+        private static string _eyeVersionInstalled;
+        
+        const float NameWidth    = 80f;
+        const float ToggleWidth  = 30f;
+        const float LabelWidth   = 55f;
+        const float FieldWidth   = 50f;
+        const float IconWidth    = 90f;
+        const float IconHeight   = 16f;
+        const float VersionTextWidth = 70f;
 
+        void DrawPackageRow(string displayName, string packageName, ref bool installFlag, ref string desiredVersion,
+            ref string installedVersion, GUIContent installedIconMsg, GUIContent warnIconMsg) {
+            EditorGUILayout.BeginHorizontal();
+
+            GUILayout.Label(displayName, GUILayout.Width(NameWidth));
+            installFlag = GUILayout.Toggle(installFlag, GUIContent.none, GUILayout.Width(ToggleWidth));
+
+            GUILayout.Label("branch", GUILayout.Width(LabelWidth));
+            desiredVersion = GUILayout.TextField(desiredVersion, GUILayout.Width(FieldWidth));
+
+            if (IsPackageInstalled(packageName, out installedVersion))
+            {
+                GUILayout.Label(installedIconMsg, GUILayout.Width(IconWidth), GUILayout.Height(IconHeight));
+                GUILayout.Label(installedVersion, GUILayout.Width(VersionTextWidth));
+            }
+            else
+            {
+                GUILayout.Label(warnIconMsg, GUILayout.Width(IconWidth), GUILayout.Height(IconHeight));
+            }
+            
+            EditorGUILayout.EndHorizontal();
+        }
+        
         // Data structure for queued EDIA installs
         private struct PackageToInstall
         {
@@ -91,7 +126,10 @@ namespace Editor
             DrawEdiaSection();
 
             EditorGUILayout.Space();
-            EditorGUILayout.LabelField("Status: " + _statusMessage);
+            EditorGUILayout.LabelField("", GUI.skin.horizontalSlider); // separator line
+            EditorGUILayout.LabelField("Status:", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField(_statusMessage);
+            EditorGUILayout.LabelField("", GUI.skin.horizontalSlider); // separator line
         }
 
         // ----- XR SECTION -----
@@ -99,15 +137,37 @@ namespace Editor
         {
             EditorGUILayout.LabelField("1) XR Dependencies", EditorStyles.boldLabel);
 
-            bool xriInstalled = IsPackageInstalled(PackageNameXri);
-            bool xrHandsInstalled = IsPackageInstalled(PackageNameXrHands);
+            string version_xri = "";
+            string version_xrhands = "";
+            bool xriInstalled = IsPackageInstalled(PackageNameXri, out version_xri);
+            bool xrHandsInstalled = IsPackageInstalled(PackageNameXrHands, out version_xrhands);
             bool xrReady = xriInstalled && xrHandsInstalled;
 
-            EditorGUILayout.LabelField(
-                $"XR Interaction Toolkit: {(xriInstalled ? "Installed" : "Not Installed")}");
-            EditorGUILayout.LabelField(
-                $"XR Hands: {(xrHandsInstalled ? "Installed" : "Not Installed")}");
-
+            GUIContent warnIconMsg = EditorGUIUtility.IconContent("console.warnicon");
+            warnIconMsg.text = " Not Installed";
+            GUIContent greenIconMsg = EditorGUIUtility.IconContent("TestPassed");
+            greenIconMsg.text = " Installed";
+            
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField("XR Interaction Toolkit: ");
+            if (xriInstalled) {
+                EditorGUILayout.LabelField(greenIconMsg);
+                EditorGUILayout.LabelField($"(v{version_xri})");
+            } else {
+                EditorGUILayout.LabelField(warnIconMsg);
+            }
+            EditorGUILayout.EndHorizontal();
+            
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField("XR Hands: ");
+            if (xrHandsInstalled) {
+                EditorGUILayout.LabelField(greenIconMsg);
+                EditorGUILayout.LabelField($"(v{version_xrhands})");
+            } else {
+                EditorGUILayout.LabelField(warnIconMsg);
+            }
+            EditorGUILayout.EndHorizontal();
+            
             EditorGUILayout.Space();
 
             EditorGUI.BeginDisabledGroup(_isInstallingEdia);
@@ -124,6 +184,42 @@ namespace Editor
                     "You can then install EDIA packages and XR samples.",
                     MessageType.Info);
             }
+            else {
+                EditorGUILayout.LabelField("Required Samples:", EditorStyles.boldLabel);
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField("[ XRI ] Starter Assets: ");
+                if (!IsSampleInstalled(PackageNameXri, "Starter Assets"))
+                    EditorGUILayout.LabelField(warnIconMsg);
+                else {
+                    EditorGUILayout.LabelField(greenIconMsg);
+                }
+                EditorGUILayout.EndHorizontal();
+                
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField("[ XRI ] Hands Interaction Demo: ");
+                if (!IsSampleInstalled(PackageNameXri, "Hands Interaction Demo"))
+                    EditorGUILayout.LabelField(warnIconMsg);
+                else {
+                    EditorGUILayout.LabelField(greenIconMsg);
+                }
+                EditorGUILayout.EndHorizontal();
+                
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField("[ XR Hands ] Hand Visualizer: ");
+                if (!IsSampleInstalled(PackageNameXrHands, "HandVisualizer"))
+                    EditorGUILayout.LabelField(warnIconMsg);
+                else {
+                    EditorGUILayout.LabelField(greenIconMsg);
+                }
+                EditorGUILayout.EndHorizontal();
+            }
+            
+            EditorGUI.BeginDisabledGroup(_isInstallingEdia);
+            if (GUILayout.Button("Install required Samples (XRI + XR Hands)", GUILayout.Height(24)))
+            {
+                InstallSamples();
+            }
+            EditorGUI.EndDisabledGroup();
         }
 
         private static bool IsPackageInstalled(string packageName)
@@ -132,6 +228,37 @@ namespace Editor
             var info = UnityEditor.PackageManager.PackageInfo.FindForAssetPath("Packages/" + packageName);
             return info != null;
         }
+        
+        private static bool IsPackageInstalled(string packageName, out string version)
+        {
+            // Uses PackageInfo to check synchronously if the package exists
+            var info = UnityEditor.PackageManager.PackageInfo.FindForAssetPath("Packages/" + packageName);
+            if (info != null) {
+                version = info.version;
+                return true;
+            }
+            version = null;
+            return false;
+        }
+
+        private static bool IsSampleInstalled(string packageName, string sampleName) {
+            if (!IsPackageInstalled(packageName)) return false;
+            
+            var samples = Sample.FindByPackage(packageName, null); // use current installed version
+
+            if (samples == null || !samples.Any()) {
+                return false;
+            }
+
+            foreach (var sample in samples) {
+                if (!sample.displayName.Contains(sampleName))
+                    continue;
+
+                return sample.isImported;
+            }
+            return false;
+        }
+        
 
         private void InstallXrPackages()
         {
@@ -161,15 +288,39 @@ namespace Editor
             Repaint();
         }
 
+
+        private void InstallSamples() {
+            TryImportSampleByName(
+                PackageNameXrHands,
+                XrHandsSampleHandVisualizer,
+                "XR Hands Hand Visualizer"
+            );
+                    
+            TryImportSampleByName(
+                PackageNameXri,
+                XriSampleStarterAssets,
+                "XRI Starter Assets"
+            );
+
+            TryImportSampleByName(
+                PackageNameXri,
+                XriSampleHandsInteractionDemo,
+                "XRI Hands Interaction Demo"
+            );
+        }
+        
         // ----- EDIA SECTION -----
-        private void DrawEdiaSection()
-        {
-            EditorGUILayout.LabelField("2) EDIA Packages", EditorStyles.boldLabel);
+        private void DrawEdiaSection() {
+
+            GUIContent warnIconMsg = EditorGUIUtility.IconContent("Toolbar Minus");
+            warnIconMsg.text = "Not Installed";
+            GUIContent installedIconMsg = EditorGUIUtility.IconContent("TestPassed");
+
+            EditorGUILayout.LabelField("2) Install EDIA Packages", EditorStyles.boldLabel);
 
             bool xrReady = IsPackageInstalled(PackageNameXri) && IsPackageInstalled(PackageNameXrHands);
 
-            if (!xrReady)
-            {
+            if (!xrReady) {
                 EditorGUILayout.HelpBox(
                     "XR Interaction Toolkit and XR Hands must be installed before installing EDIA packages.",
                     MessageType.Warning);
@@ -182,30 +333,43 @@ namespace Editor
             if (string.IsNullOrEmpty(_eyeVersion)) _eyeVersion = "main";
 
             EditorGUI.BeginDisabledGroup(_isInstallingEdia || !xrReady);
+            
+            DrawPackageRow(
+                "EDIA UXF",
+                PackageNameUxf,
+                ref _installUxf,
+                ref _uxfVersion,
+                ref _uxfVersionInstalled,
+                installedIconMsg,
+                warnIconMsg);
 
-            // UXF row
-            EditorGUILayout.BeginHorizontal();
-            _installUxf = EditorGUILayout.Toggle("EDIA UXF", _installUxf);
-            _uxfVersion = EditorGUILayout.TextField("version", _uxfVersion);
-            EditorGUILayout.EndHorizontal();
+            DrawPackageRow(
+                "EDIA Core",
+                PackageNameCore,
+                ref _installCore,
+                ref _coreVersion,
+                ref _coreVersionInstalled,
+                installedIconMsg,
+                warnIconMsg);
 
-            // Core row
-            EditorGUILayout.BeginHorizontal();
-            _installCore = EditorGUILayout.Toggle("EDIA Core", _installCore);
-            _coreVersion = EditorGUILayout.TextField("version", _coreVersion);
-            EditorGUILayout.EndHorizontal();
+            DrawPackageRow(
+                "EDIA LSL",
+                PackageNameLsl,
+                ref _installLsl,
+                ref _lslVersion,
+                ref _lslVersionInstalled,
+                installedIconMsg,
+                warnIconMsg);
 
-            // LSL row
-            EditorGUILayout.BeginHorizontal();
-            _installLsl = EditorGUILayout.Toggle("EDIA LSL", _installLsl);
-            _lslVersion = EditorGUILayout.TextField("version", _lslVersion);
-            EditorGUILayout.EndHorizontal();
-
-            // Eye row
-            EditorGUILayout.BeginHorizontal();
-            _installEye = EditorGUILayout.Toggle("EDIA Eye", _installEye);
-            _eyeVersion = EditorGUILayout.TextField("version", _eyeVersion);
-            EditorGUILayout.EndHorizontal();
+            DrawPackageRow(
+                "EDIA Eye",
+                PackageNameEye,
+                ref _installEye,
+                ref _eyeVersion,
+                ref _eyeVersionInstalled,
+                installedIconMsg,
+                warnIconMsg);
+            
 
             // Dependency rules inside EDIA:
             if (_installCore) _installUxf = true;
@@ -388,28 +552,6 @@ namespace Editor
             {
                 Debug.Log("[EDIA Installer] Package installed: " + _addRequest.Result.packageId);
                 _statusMessage = $"Install succeeded: {_currentPackage.DisplayName}";
-
-                // When Core finishes, import XRI + XR Hands samples
-                if (_currentPackage.PackageName == PackageNameCore)
-                {
-                    TryImportSampleByName(
-                        PackageNameXrHands,
-                        XrHandsSampleHandVisualizer,
-                        "XR Hands Hand Visualizer"
-                    );
-                    
-                    TryImportSampleByName(
-                        PackageNameXri,
-                        XriSampleStarterAssets,
-                        "XRI Starter Assets"
-                    );
-
-                    TryImportSampleByName(
-                        PackageNameXri,
-                        XriSampleHandsInteractionDemo,
-                        "XRI Hands Interaction Demo"
-                    );
-                }
             }
             else
             {
