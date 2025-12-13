@@ -1,7 +1,8 @@
 {
   "dependencies": {
-    "com.edia.core": "https://github.com/edia-toolbox/edia_core.git?path=/Assets/com.edia.core#main",
+    "com.edia.core": "https://github.com/edia-toolbox/edia_core.git?path=/Assets/com.edia.core#dev",
     "com.edia.eye": "https://github.com/edia-toolbox/edia_eye.git?path=/Assets/com.edia.eye#main",
+    "com.edia.lsl": "https://github.com/edia-toolbox/edia_lsl.git?path=/Assets/com.edia.lsl#dev",
     "com.edia.uxf": "https://github.com/edia-toolbox/edia_uxf.git?path=/Assets/com.edia.uxf#main",
     "com.unity.ai.navigation": "2.0.9",
     "com.unity.collab-proxy": "2.10.0",

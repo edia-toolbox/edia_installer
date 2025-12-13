@@ -106,7 +106,7 @@ namespace Editor
         [MenuItem("Tools/EDIA Installer")]
         public static void ShowWindow()
         {
-            var window = GetWindow<InstallerWindow>("EDIA Installer");
+            var window = GetWindow<EdiaInstaller>("EDIA Installer");
             window.minSize = new Vector2(500, 120);
         }
 
@@ -608,9 +608,9 @@ namespace Editor
         }
 
         // Helper to repaint from static methods
-        private static InstallerWindow GetWindowIfOpen()
+        private static EdiaInstaller GetWindowIfOpen()
         {
-            return Resources.FindObjectsOfTypeAll<InstallerWindow>().FirstOrDefault();
+            return Resources.FindObjectsOfTypeAll<EdiaInstaller>().FirstOrDefault();
         }
     }
 }

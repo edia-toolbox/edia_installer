@@ -1,7 +1,7 @@
 {
   "dependencies": {
     "com.edia.core": {
-      "version": "https://github.com/edia-toolbox/edia_core.git?path=/Assets/com.edia.core#main",
+      "version": "https://github.com/edia-toolbox/edia_core.git?path=/Assets/com.edia.core#dev",
       "depth": 0,
       "source": "git",
       "dependencies": {
@@ -13,7 +13,7 @@
         "com.unity.nuget.newtonsoft-json": "3.2.1",
         "com.unity.textmeshpro": "3.0.8"
       },
-      "hash": "b16d0588fabf8c47a6d9241866a8624cc76c3f94"
+      "hash": "f44c46caf1667b832daafd24415386b40f0f48d5"
     },
     "com.edia.eye": {
       "version": "https://github.com/edia-toolbox/edia_eye.git?path=/Assets/com.edia.eye#main",
@@ -21,6 +21,16 @@
       "source": "git",
       "dependencies": {},
       "hash": "36ddd969ebd541274082c2e3d99f053d25bf81f1"
+    },
+    "com.edia.lsl": {
+      "version": "https://github.com/edia-toolbox/edia_lsl.git?path=/Assets/com.edia.lsl#dev",
+      "depth": 0,
+      "source": "git",
+      "dependencies": {
+        "com.edia.core": "0.6.0",
+        "com.unity.inputsystem": "1.7.0"
+      },
+      "hash": "8313c74a17c8d5a59d742e6d6a796574d95e9486"
     },
     "com.edia.uxf": {
       "version": "https://github.com/edia-toolbox/edia_uxf.git?path=/Assets/com.edia.uxf#main",
