@@ -13,4 +13,4 @@ To try out, clone this project -> open "Tools > EDIA Installer" from the main me
 <img width="600" height="81" alt="image" src="https://github.com/user-attachments/assets/d1f2c81e-6055-49d4-9368-281c126f1398" />
 
 
-Alternatively, you can simply download and import the [unitypackage](./Packages/EdiaInstaller.unitypackage) to a Unity project of your liking. This will also give you the same entry in your menu bar.  
+Alternatively, you can simply download and import the [unitypackage](./Packages/EdiaInstaller.unitypackage) to a Unity project of your licking. This will also give you the same entry in your menu bar.  
