@@ -1,0 +1,44 @@
+name: Create Unitypackage Release
+
+on:
+  push:
+    tags:
+      - 'release-*'
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Get tag and release name
+        run: |
+          echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+          echo "RELEASE_NAME=${GITHUB_REF#refs/tags/release-}" >> $GITHUB_ENV
+
+      - name: Verify unitypackage exists
+        run: |
+          test -f ./Packages/EdiaInstaller.unitypackage
+          ls -lh ./Packages/EdiaInstaller.unitypackage
+
+      - name: Create GitHub Release (attach unitypackage)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$RELEASE_NAME" \
+            --title "$RELEASE_NAME" \
+            --notes "" \
+            --attach "./Packages/EdiaInstaller.unitypackage#EdiaInstaller.unitypackage"
+
+      # Optional: delete the triggering tag after publishing (keeps tag namespace clean)
+      - name: Delete trigger tag (optional)
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api -X DELETE "repos/${{ github.repository }}/git/refs/tags/${TAG_NAME}" || true
