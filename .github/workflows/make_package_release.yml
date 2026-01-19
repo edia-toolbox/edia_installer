@@ -31,10 +31,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "$RELEASE_NAME" \
-            --title "$RELEASE_NAME" \
-            --notes "" \
-            --attach "./Packages/EdiaInstaller.unitypackage#EdiaInstaller.unitypackage"
-
+          "./Packages/EdiaInstaller.unitypackage" \
+          --title "$RELEASE_NAME" \
+          --notes "" \
+          --target "${{ github.sha }}"
+        
       # Optional: delete the triggering tag after publishing (keeps tag namespace clean)
       - name: Delete trigger tag (optional)
         if: always()
