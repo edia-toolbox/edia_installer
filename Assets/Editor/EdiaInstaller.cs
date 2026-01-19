@@ -103,7 +103,7 @@ namespace Editor
         private static Queue<PackageToInstall> _installQueue = new Queue<PackageToInstall>();
         private static PackageToInstall _currentPackage;
 
-        [MenuItem("Tools/EDIA Installer")]
+        [MenuItem("EDIA/EDIA Installer")]
         public static void ShowWindow()
         {
             var window = GetWindow<EdiaInstaller>("EDIA Installer");
