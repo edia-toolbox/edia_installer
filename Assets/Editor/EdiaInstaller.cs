@@ -1,4 +1,5 @@
 #if UNITY_EDITOR
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
@@ -27,10 +28,10 @@ namespace Editor
         private const string XrHandsSampleHandVisualizer = "HandVisualizer";
 
         // EDIA Git base URLs (without version/branch part)
-        private const string GitBaseUxf = "https://github.com/edia-toolbox/edia_uxf.git?path=/Assets/com.edia.uxf#";
-        private const string GitBaseCore = "https://github.com/edia-toolbox/edia_core.git?path=/Assets/com.edia.core#";
-        private const string GitBaseLsl = "https://github.com/edia-toolbox/edia_lsl.git?path=/Assets/com.edia.lsl#";
-        private const string GitBaseEye = "https://github.com/edia-toolbox/edia_eye.git?path=/Assets/com.edia.eye#";
+        private const string GitBaseUxf = "https://github.com/edia-toolbox/edia_uxf.git";
+        private const string GitBaseCore = "https://github.com/edia-toolbox/edia_core.git";
+        private const string GitBaseLsl = "https://github.com/edia-toolbox/edia_lsl.git";
+        private const string GitBaseEye = "https://github.com/edia-toolbox/edia_eye.git";
 
         // Package Manager requests (for EDIA queue)
         private static AddRequest _addRequest;
@@ -61,7 +62,101 @@ namespace Editor
         const float IconWidth    = 90f;
         const float IconHeight   = 16f;
         const float VersionTextWidth = 70f;
+        
+        // Data structure for queued EDIA installs
+        [Serializable]
+        private struct PackageToInstall
+        {
+            public string PackageName;
+            public string GitUrl;
+            public string DisplayName;
 
+            public PackageToInstall(string packageName, string gitUrl, string displayName)
+            {
+                PackageName = packageName;
+                GitUrl = gitUrl;
+                DisplayName = displayName;
+            }
+        }
+
+        private const string KeyInstalling = "EDIA_INSTALLING";
+        private const string KeyQueueJson  = "EDIA_QUEUE_JSON";
+        private const string KeyCurrentJson = "EDIA_CURRENT_JSON";
+        
+        // save installation state across domain reloads
+        [Serializable]
+        private class InstallState
+        {
+            public List<PackageToInstall> Queue = new();
+            public PackageToInstall Current;
+        }
+        
+        private static void SaveState()
+        {
+            var state = new InstallState
+            {
+                Queue = _installQueue.ToList(),
+                Current = _currentPackage
+            };
+
+            SessionState.SetBool(KeyInstalling, _isInstallingEdia);
+            SessionState.SetString(KeyQueueJson, JsonUtility.ToJson(state));
+        }
+
+        private static bool TryLoadState(out InstallState state)
+        {
+            state = null;
+            if (!SessionState.GetBool(KeyInstalling, false))
+                return false;
+
+            var json = SessionState.GetString(KeyQueueJson, "");
+            if (string.IsNullOrEmpty(json))
+                return false;
+
+            state = JsonUtility.FromJson<InstallState>(json);
+            return state != null;
+        }
+        
+        
+        [InitializeOnLoadMethod]
+        private static void ResumeAfterReload()
+        {
+            if (!TryLoadState(out var state))
+                return;
+
+            _installQueue = new Queue<PackageToInstall>(state.Queue);
+            _currentPackage = state.Current;
+            _isInstallingEdia = true;
+
+            // After a domain reload, any in-flight _addRequest is gone.
+            // So do NOT attach PackageProgress here.
+            EditorApplication.update -= OnResumeTick;
+            EditorApplication.update += OnResumeTick;
+        }
+
+        private static void OnResumeTick()
+        {
+            // Run once, then detach.
+            EditorApplication.update -= OnResumeTick;
+
+            // If we already finished earlier, clean up.
+            if (!_isInstallingEdia)
+                return;
+
+            // Continue with the next package.
+            // This recreates _addRequest and reattaches PackageProgress.
+            StartNextInstall();
+
+            GetWindowIfOpen()?.Repaint();
+        }
+        
+        private static void ClearState() {
+            Debug.Log("Clearing state of EDIA Installer.");
+            SessionState.EraseBool(KeyInstalling);
+            SessionState.EraseString(KeyQueueJson);
+        }
+        
+        
         void DrawPackageRow(string displayName, string packageName, ref bool installFlag, ref string desiredVersion,
             ref string installedVersion, GUIContent installedIconMsg, GUIContent warnIconMsg) {
             EditorGUILayout.BeginHorizontal();
@@ -69,7 +164,7 @@ namespace Editor
             GUILayout.Label(displayName, GUILayout.Width(NameWidth));
             installFlag = GUILayout.Toggle(installFlag, GUIContent.none, GUILayout.Width(ToggleWidth));
 
-            GUILayout.Label("branch", GUILayout.Width(LabelWidth));
+            GUILayout.Label("version | branch", GUILayout.Width(LabelWidth));
             desiredVersion = GUILayout.TextField(desiredVersion, GUILayout.Width(FieldWidth));
 
             if (IsPackageInstalled(packageName, out installedVersion))
@@ -85,20 +180,6 @@ namespace Editor
             EditorGUILayout.EndHorizontal();
         }
         
-        // Data structure for queued EDIA installs
-        private struct PackageToInstall
-        {
-            public string PackageName;
-            public string GitUrl;
-            public string DisplayName;
-
-            public PackageToInstall(string packageName, string gitUrl, string displayName)
-            {
-                PackageName = packageName;
-                GitUrl = gitUrl;
-                DisplayName = displayName;
-            }
-        }
 
         private static Queue<PackageToInstall> _installQueue = new Queue<PackageToInstall>();
         private static PackageToInstall _currentPackage;
@@ -399,9 +480,8 @@ namespace Editor
             // Build a fresh queue based on user choices, in dependency order
             _installQueue.Clear();
 
-            if (_installUxf)
-            {
-                string url = GitBaseUxf + _uxfVersion;
+            if (_installUxf) {
+                string url = ParseVersionToGitString(_uxfVersion, GitBaseUxf, PackageNameUxf); 
                 _installQueue.Enqueue(new PackageToInstall(
                     PackageNameUxf,
                     url,
@@ -411,7 +491,7 @@ namespace Editor
 
             if (_installCore)
             {
-                string url = GitBaseCore + _coreVersion;
+                string url = ParseVersionToGitString(_coreVersion, GitBaseCore, PackageNameCore);
                 _installQueue.Enqueue(new PackageToInstall(
                     PackageNameCore,
                     url,
@@ -421,7 +501,7 @@ namespace Editor
 
             if (_installLsl)
             {
-                string url = GitBaseLsl + _lslVersion;
+                string url = ParseVersionToGitString(_lslVersion, GitBaseLsl, PackageNameLsl);
                 _installQueue.Enqueue(new PackageToInstall(
                     PackageNameLsl,
                     url,
@@ -431,7 +511,7 @@ namespace Editor
 
             if (_installEye)
             {
-                string url = GitBaseEye + _eyeVersion;
+                string url = ParseVersionToGitString(_eyeVersion, GitBaseEye, PackageNameEye);
                 _installQueue.Enqueue(new PackageToInstall(
                     PackageNameEye,
                     url,
@@ -456,6 +536,26 @@ namespace Editor
             Repaint();
         }
 
+        private string ParseVersionToGitString(string version, string baseString, string pckgName) {
+            // Standard versions (e.g., v0.6.2 or 0.6.2)
+            if (version.Contains('.')) {
+                if (version.StartsWith('v'))
+                    version = version.Substring(1);
+                if (Version.TryParse(version, out _))
+                    return baseString + "#v" + version;
+                Debug.LogError("Invalid version format. Must match SemVer (X.Y.Z).");
+            }
+
+            // special releases (e.g., exp-validet)
+            if (version.Contains('-')) {
+                return baseString + "#" + version;
+            }
+            
+            // branches
+            Debug.Log($"Trying to import {pckgName} from git, using branch: {version}");
+            return baseString + $"?path=/Assets/{pckgName}" + "#" + version;
+        }
+        
         // Handle result of Client.List: filter out already installed packages
         private static void OnListProgress()
         {
@@ -508,6 +608,9 @@ namespace Editor
             {
                 _statusMessage = "All EDIA installations completed.";
                 _isInstallingEdia = false;
+                
+                ClearState();
+                
                 GetWindowIfOpen()?.Repaint();
                 return;
             }
@@ -518,7 +621,8 @@ namespace Editor
             Debug.Log($"[EDIA Installer] Installing {_currentPackage.DisplayName} from {_currentPackage.GitUrl}");
 
             try
-            {
+            {   
+                SaveState();
                 _addRequest = Client.Add(_currentPackage.GitUrl);
                 EditorApplication.update += PackageProgress;
             }
@@ -527,6 +631,8 @@ namespace Editor
                 Debug.LogError("[EDIA Installer] Exception while starting install:\n" + ex);
                 _statusMessage = "Error starting install. See Console.";
                 _isInstallingEdia = false;
+                
+                ClearState();
             }
 
             GetWindowIfOpen()?.Repaint();
@@ -536,7 +642,15 @@ namespace Editor
         {
             if (_addRequest == null)
             {
+                Debug.Log("Finishing installs; queue is empty.");
                 EditorApplication.update -= PackageProgress;
+                
+                // If we're installing and still have queued work, continue.
+                if (_isInstallingEdia && _installQueue != null && _installQueue.Count > 0) {
+                    StartNextInstall();
+                    return;
+                }
+                
                 _isInstallingEdia = false;
                 _statusMessage = "No active request.";
                 GetWindowIfOpen()?.Repaint();
