@@ -23,5 +23,6 @@ Alternatively, you can clone this repo -> open "EDIA > EDIA Installer" from the 
   - [ ] PICO
   - [ ] Vive
   - [ ] Varjo
-- [ ] allow to install releases (not only branches) 
+- [ ] add `EDIA RCAS`
+- [x] allow to install releases (not only branches) 
 
