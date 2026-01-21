@@ -7,10 +7,22 @@ Single Editor-script which allows handling the installation of the various EDIA 
 <img width="511" height="558" alt="image" src="https://github.com/user-attachments/assets/ee063b7e-7bd1-471a-a803-bea37f3a0c98" />
 
 ## Installation
-To try out, clone this project -> open "Tools > EDIA Installer" from the main menu, and see if you can take it from there.   
-  
-**see here:**  
-<img width="600" height="81" alt="image" src="https://github.com/user-attachments/assets/d1f2c81e-6055-49d4-9368-281c126f1398" />
+**Recommended:**
+Simply download and import the [unitypackage](./Packages/EdiaInstaller.unitypackage) to your Unity project. This will give you the following entry in your menu bar:      
 
+<img width="600" alt="image" src="./docs/images/screenshot_edia_menu.png" />
 
-Alternatively, you can simply download and import the [unitypackage](./Packages/EdiaInstaller.unitypackage) to a Unity project of your licking. This will also give you the same entry in your menu bar.  
+> [!IMPORTANT]  
+> You should and need _not_ have installed any dependencies of EDIA manually to the project, yet—the installer will take care of this. Also, make sure that you do **not** have UXF installed to the project, which would cause conflicts with EDIA (which brings its own UXF-clone). 
+
+Alternatively, you can clone this repo -> open "EDIA > EDIA Installer" from the main menu, and take it from there to build a project from scratch.   
+
+## Roadmap
+- [ ] add `EDIA Eye` submodules
+  - [ ] Quest
+  - [ ] PICO
+  - [ ] Vive
+  - [ ] Varjo
+- [ ] add `EDIA RCAS`
+- [x] allow to install releases (not only branches) 
+
