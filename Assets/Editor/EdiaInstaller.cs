@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Unity.VisualScripting;
 using UnityEditor;
 using Upm = UnityEditor.PackageManager;
 using UnityEditor.PackageManager.Requests;
@@ -66,17 +67,27 @@ namespace Edia.Installer {
         const float IconHeight = 16f;
         const float VersionTextWidth = 70f;
 
-        // Data structure for queued EDIA installs
-        [Serializable]
-        private struct PackageToInstall {
-            public string PackageName;
-            public string GitUrl;
-            public string DisplayName;
+        private enum InstallStepKind {
+            Package,
+            Sample
+        }
 
-            public PackageToInstall(string packageName, string gitUrl, string displayName) {
+        // Data structure for queued installer work
+        [Serializable]
+        private struct InstallStep {
+            public InstallStepKind Kind;
+            public string PackageName;
+            public string RequestArgument;
+            public string DisplayName;
+            public string SampleNameFragment;
+
+            public InstallStep(InstallStepKind kind, string packageName, string requestArgument, string displayName,
+                string sampleNameFragment = null) {
+                Kind = kind;
                 PackageName = packageName;
-                GitUrl = gitUrl;
+                RequestArgument = requestArgument;
                 DisplayName = displayName;
+                SampleNameFragment = sampleNameFragment;
             }
         }
 
@@ -87,8 +98,8 @@ namespace Edia.Installer {
         // save installation state across domain reloads
         [Serializable]
         private class InstallState {
-            public List<PackageToInstall> Queue = new();
-            public PackageToInstall Current;
+            public List<InstallStep> Queue = new();
+            public InstallStep Current;
         }
 
         private static void SaveState() {
@@ -120,7 +131,7 @@ namespace Edia.Installer {
             if (!TryLoadState(out var state))
                 return;
 
-            _installQueue = new Queue<PackageToInstall>(state.Queue);
+            _installQueue = new Queue<InstallStep>(state.Queue);
             _currentPackage = state.Current;
             _isInstallingEdia = true;
 
@@ -159,7 +170,12 @@ namespace Edia.Installer {
             GUILayout.Label(displayName, GUILayout.Width(NameWidth));
             installFlag = GUILayout.Toggle(installFlag, GUIContent.none, GUILayout.Width(ToggleWidth));
 
-            GUILayout.Label("version | branch", GUILayout.Width(LabelWidth));
+            GUILayout.Label(new GUIContent(
+                    "version | branch",
+                    "Specify either a release version (e.g. 'v0.1.2' or 'exp-validet') or a git branch (e.g. 'main'). " +
+                    "You cannot install branches which have a '.' or '-' in the branch name."
+                ),
+                GUILayout.Width(LabelWidth));
             desiredVersion = GUILayout.TextField(
                 IsPackageInstalled(packageName, out _, out var source) ? 
                     source :
@@ -180,8 +196,8 @@ namespace Edia.Installer {
         }
 
 
-        private static Queue<PackageToInstall> _installQueue = new Queue<PackageToInstall>();
-        private static PackageToInstall _currentPackage;
+        private static Queue<InstallStep> _installQueue = new Queue<InstallStep>();
+        private static InstallStep _currentPackage;
 
         [MenuItem("EDIA/EDIA Installer")]
         public static void ShowWindow() {
@@ -332,17 +348,26 @@ namespace Edia.Installer {
         private static bool IsSampleInstalled(string packageName, string sampleName) {
             if (!IsPackageInstalled(packageName)) return false;
 
-            var samples = Upm.UI.Sample.FindByPackage(packageName, null); // use current installed version
+            try {
+                var samples = Upm.UI.Sample.FindByPackage(packageName, null); // use current installed version
 
-            if (samples == null || !samples.Any()) {
-                return false;
+                if (samples == null || !samples.Any()) {
+                    return false;
+                }
+
+                foreach (var sample in samples) {
+                    if (!sample.displayName.Contains(sampleName))
+                        continue;
+
+                    return sample.isImported;
+                }
             }
-
-            foreach (var sample in samples) {
-                if (!sample.displayName.Contains(sampleName))
-                    continue;
-
-                return sample.isImported;
+            catch {
+                // Tendentially hacky. Works around the race condition that package might seem available during its install
+                // but Samples are not yet accessible.
+                // This just avoids a few errors in the console until the situation resolves.
+                // While there are cleaner ways for this, I do not expect this to create major headaches. 
+                return false;
             }
 
             return false;
@@ -350,6 +375,8 @@ namespace Edia.Installer {
 
 
         private void InstallXrPackages() {
+            _installQueue.Clear();
+
             bool needXri = !IsPackageInstalled(PackageNameXri);
             bool needHands = !IsPackageInstalled(PackageNameXrHands);
 
@@ -360,38 +387,55 @@ namespace Edia.Installer {
             }
 
             if (needXri) {
-                Debug.Log("[EDIA Installer] Requesting install of XR Interaction Toolkit...");
-                Upm.Client.Add(PackageNameXri); // async; we don't track completion in code
+                _installQueue.Enqueue(new InstallStep(
+                    InstallStepKind.Package,
+                    PackageNameXri,
+                    PackageNameXri,
+                    "XR Interaction Toolkit"
+                ));
             }
 
             if (needHands) {
-                Debug.Log("[EDIA Installer] Requesting install of XR Hands...");
-                Upm.Client.Add(PackageNameXrHands);
+                _installQueue.Enqueue(new InstallStep(
+                    InstallStepKind.Package,
+                    PackageNameXrHands,
+                    PackageNameXrHands,
+                    "XR Hands"
+                ));
             }
 
-            _statusMessage = "Requested XR packages via Package Manager. Unity may reload while importing.";
-            Repaint();
+            StartQueuedInstalls("Installing XR dependencies...");
         }
 
 
         private void InstallSamples() {
-            TryImportSampleByName(
+            _installQueue.Clear();
+
+            _installQueue.Enqueue(new InstallStep(
+                InstallStepKind.Sample,
                 PackageNameXrHands,
-                XrHandsSampleHandVisualizer,
-                "XR Hands Hand Visualizer"
-            );
+                null,
+                "XR Hands Hand Visualizer",
+                XrHandsSampleHandVisualizer
+            ));
 
-            TryImportSampleByName(
+            _installQueue.Enqueue(new InstallStep(
+                InstallStepKind.Sample,
                 PackageNameXri,
-                XriSampleStarterAssets,
-                "XRI Starter Assets"
-            );
+                null,
+                "XRI Starter Assets",
+                XriSampleStarterAssets
+            ));
 
-            TryImportSampleByName(
+            _installQueue.Enqueue(new InstallStep(
+                InstallStepKind.Sample,
                 PackageNameXri,
-                XriSampleHandsInteractionDemo,
-                "XRI Hands Interaction Demo"
-            );
+                null,
+                "XRI Hands Interaction Demo",
+                XriSampleHandsInteractionDemo
+            ));
+
+            StartQueuedInstalls("Importing required XR samples...");
         }
 
         // ----- EDIA SECTION -----
@@ -494,7 +538,8 @@ namespace Edia.Installer {
 
             if (_installUxf) {
                 string url = ParseVersionToGitString(_uxfVersion, GitBaseUxf, PackageNameUxf);
-                _installQueue.Enqueue(new PackageToInstall(
+                _installQueue.Enqueue(new InstallStep(
+                    InstallStepKind.Package,
                     PackageNameUxf,
                     url,
                     $"EDIA UXF ({_uxfVersion})"
@@ -503,7 +548,8 @@ namespace Edia.Installer {
 
             if (_installCore) {
                 string url = ParseVersionToGitString(_coreVersion, GitBaseCore, PackageNameCore);
-                _installQueue.Enqueue(new PackageToInstall(
+                _installQueue.Enqueue(new InstallStep(
+                    InstallStepKind.Package,
                     PackageNameCore,
                     url,
                     $"EDIA Core ({_coreVersion})"
@@ -512,7 +558,8 @@ namespace Edia.Installer {
 
             if (_installLsl) {
                 string url = ParseVersionToGitString(_lslVersion, GitBaseLsl, PackageNameLsl);
-                _installQueue.Enqueue(new PackageToInstall(
+                _installQueue.Enqueue(new InstallStep(
+                    InstallStepKind.Package,
                     PackageNameLsl,
                     url,
                     $"EDIA LSL ({_lslVersion})"
@@ -521,7 +568,8 @@ namespace Edia.Installer {
 
             if (_installEye) {
                 string url = ParseVersionToGitString(_eyeVersion, GitBaseEye, PackageNameEye);
-                _installQueue.Enqueue(new PackageToInstall(
+                _installQueue.Enqueue(new InstallStep(
+                    InstallStepKind.Package,
                     PackageNameEye,
                     url,
                     $"EDIA Eye ({_eyeVersion})"
@@ -530,7 +578,8 @@ namespace Edia.Installer {
 
             if (_installRcas) {
                 string url = ParseVersionToGitString(_rcasVersion, GitBaseRcas, PackageNameRcas);
-                _installQueue.Enqueue(new PackageToInstall(
+                _installQueue.Enqueue(new InstallStep(
+                    InstallStepKind.Package,
                     PackageNameRcas,
                     url,
                     $"EDIA RCAS ({_rcasVersion})"
@@ -550,6 +599,25 @@ namespace Edia.Installer {
             _listRequest = Upm.Client.List(true);
             EditorApplication.update += OnListProgress;
 
+            Repaint();
+        }
+
+        private void StartQueuedInstalls(string initialStatus) {
+            if (_isInstallingEdia) {
+                _statusMessage = "Already installing packages. Please wait.";
+                Repaint();
+                return;
+            }
+
+            if (_installQueue.Count == 0) {
+                _statusMessage = "Nothing to install.";
+                Repaint();
+                return;
+            }
+
+            _statusMessage = initialStatus;
+            _isInstallingEdia = true;
+            StartNextInstall();
             Repaint();
         }
 
@@ -589,10 +657,10 @@ namespace Edia.Installer {
             }
 
             var installedNames = new HashSet<string>(_listRequest.Result.Select(p => p.name));
-            var remaining = new Queue<PackageToInstall>();
+            var remaining = new Queue<InstallStep>();
 
             foreach (var pkg in _installQueue) {
-                if (installedNames.Contains(pkg.PackageName)) {
+                if (pkg.Kind == InstallStepKind.Package && installedNames.Contains(pkg.PackageName)) {
                     Debug.Log($"[EDIA Installer] {pkg.DisplayName} already installed ({pkg.PackageName}), skipping.");
                 }
                 else {
@@ -626,13 +694,19 @@ namespace Edia.Installer {
 
             _currentPackage = _installQueue.Dequeue();
 
-            _statusMessage = $"Installing: {_currentPackage.DisplayName}...";
-            Debug.Log($"[EDIA Installer] Installing {_currentPackage.DisplayName} from {_currentPackage.GitUrl}");
+            _statusMessage = $"{(_currentPackage.Kind == InstallStepKind.Package ? "Installing" : "Importing")}: {_currentPackage.DisplayName}...";
+            Debug.Log($"[EDIA Installer] Starting {_currentPackage.Kind}: {_currentPackage.DisplayName}");
 
             try {
                 SaveState();
-                _addRequest = Upm.Client.Add(_currentPackage.GitUrl);
-                EditorApplication.update += PackageProgress;
+
+                if (_currentPackage.Kind == InstallStepKind.Package) {
+                    _addRequest = Upm.Client.Add(_currentPackage.RequestArgument);
+                    EditorApplication.update += PackageProgress;
+                }
+                else {
+                    ImportCurrentSample();
+                }
             }
             catch (System.Exception ex) {
                 Debug.LogError("[EDIA Installer] Exception while starting install:\n" + ex);
@@ -679,6 +753,17 @@ namespace Edia.Installer {
             _addRequest = null;
 
             // Continue with next in queue, if any
+            StartNextInstall();
+        }
+
+        private static void ImportCurrentSample() {
+            TryImportSampleByName(
+                _currentPackage.PackageName,
+                _currentPackage.SampleNameFragment,
+                _currentPackage.DisplayName
+            );
+
+            _statusMessage = $"Import finished: {_currentPackage.DisplayName}";
             StartNextInstall();
         }
 
