@@ -9,6 +9,8 @@ using UnityEditor.PackageManager.Requests;
 using UnityEngine;
 
 namespace Edia.Installer {
+    
+    // v0.2.2 (2026-01-30, eioe) 
 
     public class EdiaInstaller : EditorWindow {
         // EDIA package IDs (as in their package.json)
