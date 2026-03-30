@@ -8,7 +8,7 @@ Single Editor-script which allows handling the installation of the various EDIA 
 
 ## Installation
 **Recommended:**
-Simply download and import the [unitypackage](./Packages/EdiaInstaller.unitypackage) to your Unity project. This will give you the following entry in your menu bar:      
+Simply download the [unitypackage](./Packages/EdiaInstaller.unitypackage) and import it to your Unity project (menu: `Assets/Import package/Custom Unity Package`). This will give you the following entry in your menu bar:      
 
 <img width="600" alt="image" src="./docs/images/screenshot_edia_menu.png" />
 
