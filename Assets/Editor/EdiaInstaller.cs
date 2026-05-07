@@ -10,7 +10,7 @@ using UnityEngine;
 
 namespace Edia.Installer {
     
-    // v0.2.2 (2026-01-30, eioe) 
+    // v0.3.0 (2026-05-07, eioe)
 
     public class EdiaInstaller : EditorWindow {
         // EDIA package IDs (as in their package.json)
