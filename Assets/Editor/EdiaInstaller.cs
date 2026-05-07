@@ -27,6 +27,7 @@ namespace Edia.Installer {
         // XR samples
         private const string XriSampleStarterAssets = "Starter Assets";
         private const string XriSampleHandsInteractionDemo = "Hands Interaction Demo";
+        private const string XriSampleXrDeviceSimulator = "XR Device Simulator";
         private const string XrHandsSampleHandVisualizer = "HandVisualizer";
 
         // EDIA Git base URLs (without version/branch part)
@@ -303,6 +304,16 @@ namespace Edia.Installer {
                 }
 
                 EditorGUILayout.EndHorizontal();
+                
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField("[ XRI ] XR Device Simulator: ");
+                if (!IsSampleInstalled(PackageNameXri, "XR Device Simulator"))
+                    EditorGUILayout.LabelField(warnIconMsg);
+                else {
+                    EditorGUILayout.LabelField(greenIconMsg);
+                }
+
+                EditorGUILayout.EndHorizontal();
 
                 EditorGUILayout.BeginHorizontal();
                 EditorGUILayout.LabelField("[ XR Hands ] Hand Visualizer: ");
@@ -427,6 +438,14 @@ namespace Edia.Installer {
                 null,
                 "XRI Starter Assets",
                 XriSampleStarterAssets
+            ));
+            
+            _installQueue.Enqueue(new InstallStep(
+                InstallStepKind.Sample,
+                PackageNameXri,
+                null,
+                "XRI XR Device Simulator",
+                XriSampleXrDeviceSimulator
             ));
 
             _installQueue.Enqueue(new InstallStep(
