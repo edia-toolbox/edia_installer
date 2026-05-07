@@ -2,11 +2,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Unity.VisualScripting;
 using UnityEditor;
-using Upm = UnityEditor.PackageManager;
 using UnityEditor.PackageManager.Requests;
+using UnityEditor.PackageManager.UI;
 using UnityEngine;
+using Upm = UnityEditor.PackageManager;
 
 namespace Edia.Installer {
     
@@ -351,7 +351,7 @@ namespace Edia.Installer {
             if (!IsPackageInstalled(packageName)) return false;
 
             try {
-                var samples = Upm.UI.Sample.FindByPackage(packageName, null); // use current installed version
+                var samples = Sample.FindByPackage(packageName, null); // use current installed version
 
                 if (samples == null || !samples.Any()) {
                     return false;
@@ -628,7 +628,7 @@ namespace Edia.Installer {
             if (version.Contains('.')) {
                 if (version.StartsWith("v"))
                     version = version.Substring(1);
-                if (System.Version.TryParse(version, out _))
+                if (Version.TryParse(version, out _))
                     return baseString + "#v" + version;
                 Debug.LogError("Invalid version format. Must match SemVer (X.Y.Z).");
             }
@@ -710,7 +710,7 @@ namespace Edia.Installer {
                     ImportCurrentSample();
                 }
             }
-            catch (System.Exception ex) {
+            catch (Exception ex) {
                 Debug.LogError("[EDIA Installer] Exception while starting install:\n" + ex);
                 _statusMessage = "Error starting install. See Console.";
                 _isInstallingEdia = false;
@@ -774,7 +774,7 @@ namespace Edia.Installer {
         /// </summary>
         private static void TryImportSampleByName(string packageName, string sampleNameFragment, string friendlyLabel) {
             try {
-                var samples = Upm.UI.Sample.FindByPackage(packageName, null); // use current installed version
+                var samples = Sample.FindByPackage(packageName, null); // use current installed version
 
                 if (samples == null || !samples.Any()) {
                     Debug.LogWarning($"[EDIA Installer] No samples found for package '{packageName}'. " +
@@ -791,7 +791,7 @@ namespace Edia.Installer {
                     }
                     else {
                         Debug.Log($"[EDIA Installer] Importing {friendlyLabel} sample...");
-                        sample.Import(Upm.UI.Sample.ImportOptions.None);
+                        sample.Import(Sample.ImportOptions.None);
                     }
 
                     return;
@@ -800,7 +800,7 @@ namespace Edia.Installer {
                 Debug.LogWarning(
                     $"[EDIA Installer] Could not find sample '{sampleNameFragment}' in package '{packageName}'.");
             }
-            catch (System.Exception ex) {
+            catch (Exception ex) {
                 Debug.LogError(
                     $"[EDIA Installer] Failed to import sample '{friendlyLabel}' from '{packageName}': {ex}");
             }
@@ -808,7 +808,7 @@ namespace Edia.Installer {
 
         // Helper to repaint from static methods
         private static EdiaInstaller GetWindowIfOpen() {
-            return UnityEngine.Resources.FindObjectsOfTypeAll<EdiaInstaller>().FirstOrDefault();
+            return Resources.FindObjectsOfTypeAll<EdiaInstaller>().FirstOrDefault();
         }
     }
 }
