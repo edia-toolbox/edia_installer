@@ -286,8 +286,8 @@ namespace Edia.Installer {
             else {
                 EditorGUILayout.LabelField("Required Samples:", EditorStyles.boldLabel);
                 EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.LabelField("[ XRI ] Starter Assets: ");
-                if (!IsSampleInstalled(PackageNameXri, "Starter Assets"))
+                EditorGUILayout.LabelField($"[ XRI ] {XriSampleStarterAssets}");
+                if (!IsSampleInstalled(PackageNameXri, XriSampleStarterAssets))
                     EditorGUILayout.LabelField(warnIconMsg);
                 else {
                     EditorGUILayout.LabelField(greenIconMsg);
@@ -296,8 +296,8 @@ namespace Edia.Installer {
                 EditorGUILayout.EndHorizontal();
 
                 EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.LabelField("[ XRI ] Hands Interaction Demo: ");
-                if (!IsSampleInstalled(PackageNameXri, "Hands Interaction Demo"))
+                EditorGUILayout.LabelField($"[ XRI ] {XriSampleHandsInteractionDemo}");
+                if (!IsSampleInstalled(PackageNameXri, XriSampleHandsInteractionDemo))
                     EditorGUILayout.LabelField(warnIconMsg);
                 else {
                     EditorGUILayout.LabelField(greenIconMsg);
@@ -306,8 +306,8 @@ namespace Edia.Installer {
                 EditorGUILayout.EndHorizontal();
                 
                 EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.LabelField("[ XRI ] XR Device Simulator: ");
-                if (!IsSampleInstalled(PackageNameXri, "XR Device Simulator"))
+                EditorGUILayout.LabelField($"[ XRI ] {XriSampleXrDeviceSimulator}");
+                if (!IsSampleInstalled(PackageNameXri, XriSampleXrDeviceSimulator))
                     EditorGUILayout.LabelField(warnIconMsg);
                 else {
                     EditorGUILayout.LabelField(greenIconMsg);
@@ -316,8 +316,8 @@ namespace Edia.Installer {
                 EditorGUILayout.EndHorizontal();
 
                 EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.LabelField("[ XR Hands ] Hand Visualizer: ");
-                if (!IsSampleInstalled(PackageNameXrHands, "HandVisualizer"))
+                EditorGUILayout.LabelField($"[ XR Hands ] {XrHandsSampleHandVisualizer}");
+                if (!IsSampleInstalled(PackageNameXrHands, XrHandsSampleHandVisualizer))
                     EditorGUILayout.LabelField(warnIconMsg);
                 else {
                     EditorGUILayout.LabelField(greenIconMsg);
