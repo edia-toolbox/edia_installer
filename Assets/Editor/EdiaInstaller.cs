@@ -19,6 +19,7 @@ namespace Edia.Installer {
         private const string PackageNameLsl = "com.edia.lsl";
         private const string PackageNameEye = "com.edia.eye";
         private const string PackageNameRcas = "com.edia.rcas";
+        private const string PackageNameEyeQuest = "com.edia.eye.quest";
 
         // Unity XR packages
         private const string PackageNameXri = "com.unity.xr.interaction.toolkit";
@@ -36,6 +37,7 @@ namespace Edia.Installer {
         private const string GitBaseLsl = "https://github.com/edia-toolbox/edia_lsl.git";
         private const string GitBaseEye = "https://github.com/edia-toolbox/edia_eye.git";
         private const string GitBaseRcas = "https://github.com/edia-toolbox/edia_rcas.git";
+        private const string GitBaseEyeQuest = "https://github.com/edia-toolbox/edia_eye_quest.git";
 
         // Package Manager requests (for EDIA queue)
         private static AddRequest _addRequest;
@@ -51,18 +53,21 @@ namespace Edia.Installer {
         private static bool _installLsl;
         private static bool _installEye;
         private static bool _installRcas;
+        private static bool _installEyeQuest;
         private static string _uxfVersion = "main";
         private static string _coreVersion = "main";
         private static string _lslVersion = "main";
         private static string _eyeVersion = "main";
         private static string _rcasVersion = "main";
+        private static string _eyeQuestVersion = "main";
         private static string _uxfVersionInstalled;
         private static string _coreVersionInstalled;
         private static string _lslVersionInstalled;
         private static string _eyeVersionInstalled;
+        private static string _eyeQuestVersionInstalled;
         private static string _rcasVersionInstalled;
 
-        const float NameWidth = 80f;
+        const float NameWidth = 120f;
         const float ToggleWidth = 30f;
         const float LabelWidth = 110f;
         const float FieldWidth = 30f;
@@ -458,6 +463,7 @@ namespace Edia.Installer {
 
             StartQueuedInstalls("Importing required XR samples...");
         }
+#region EDIA modules
 
         // ----- EDIA SECTION -----
         private void DrawEdiaSection() {
@@ -482,6 +488,7 @@ namespace Edia.Installer {
             _lslVersion = _lslVersionInstalled ?? _lslVersion ?? string.Empty;
             _eyeVersion = _eyeVersionInstalled ?? _eyeVersion ?? string.Empty;
             _rcasVersion = _rcasVersionInstalled ?? _rcasVersion ?? string.Empty;
+            _eyeQuestVersion = _eyeQuestVersionInstalled ?? _eyeQuestVersion ?? string.Empty;
 
             EditorGUI.BeginDisabledGroup(_isInstallingEdia || !xrReady);
 
@@ -513,6 +520,15 @@ namespace Edia.Installer {
                 warnIconMsg);
 
             DrawPackageRow(
+                "EDIA RCAS",
+                PackageNameRcas,
+                ref _installRcas,
+                ref _rcasVersion,
+                ref _rcasVersionInstalled,
+                installedIconMsg,
+                warnIconMsg);
+            
+            DrawPackageRow(
                 "EDIA Eye",
                 PackageNameEye,
                 ref _installEye,
@@ -522,20 +538,21 @@ namespace Edia.Installer {
                 warnIconMsg);
 
             DrawPackageRow(
-                "EDIA RCAS",
-                PackageNameRcas,
-                ref _installRcas,
-                ref _rcasVersion,
-                ref _rcasVersionInstalled,
+                "EDIA Eye Quest",
+                PackageNameEyeQuest,
+                ref _installEyeQuest,
+                ref _eyeQuestVersion,
+                ref _eyeQuestVersionInstalled,
                 installedIconMsg,
                 warnIconMsg);
-
 
             // Dependency rules inside EDIA:
             if (_installCore) _installUxf = true;
             if (_installLsl) _installCore = true;
             if (_installEye) _installCore = true;
             if (_installRcas) _installCore = true;
+            if (_installEyeQuest) _installCore = true;
+            if (_installEyeQuest) _installEye = true;
 
             EditorGUILayout.Space();
 
@@ -604,6 +621,16 @@ namespace Edia.Installer {
                     PackageNameRcas,
                     url,
                     $"EDIA RCAS ({_rcasVersion})"
+                ));
+            }
+            
+            if (_installEyeQuest) {
+                string url = ParseVersionToGitString(_eyeQuestVersion, GitBaseEyeQuest, PackageNameEyeQuest);
+                _installQueue.Enqueue(new InstallStep(
+                    InstallStepKind.Package,
+                    PackageNameEyeQuest,
+                    url,
+                    $"EDIA Eye Quest ({_eyeQuestVersion})"
                 ));
             }
 
@@ -829,7 +856,12 @@ namespace Edia.Installer {
         private static EdiaInstaller GetWindowIfOpen() {
             return UnityEngine.Resources.FindObjectsOfTypeAll<EdiaInstaller>().FirstOrDefault();
         }
+
+#endregion
+        
     }
 }
+
+
 
 #endif
