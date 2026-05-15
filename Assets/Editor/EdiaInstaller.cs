@@ -10,7 +10,7 @@ using Upm = UnityEditor.PackageManager;
 
 namespace Edia.Installer {
     
-    // v0.2.2 (2026-01-30, eioe) 
+    // v0.3.0 (2026-05-07, eioe)
 
     public class EdiaInstaller : EditorWindow {
         // EDIA package IDs (as in their package.json)
@@ -27,6 +27,7 @@ namespace Edia.Installer {
         // XR samples
         private const string XriSampleStarterAssets = "Starter Assets";
         private const string XriSampleHandsInteractionDemo = "Hands Interaction Demo";
+        private const string XriSampleXrDeviceSimulator = "XR Device Simulator";
         private const string XrHandsSampleHandVisualizer = "HandVisualizer";
 
         // EDIA Git base URLs (without version/branch part)
@@ -285,8 +286,8 @@ namespace Edia.Installer {
             else {
                 EditorGUILayout.LabelField("Required Samples:", EditorStyles.boldLabel);
                 EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.LabelField("[ XRI ] Starter Assets: ");
-                if (!IsSampleInstalled(PackageNameXri, "Starter Assets"))
+                EditorGUILayout.LabelField($"[ XRI ] {XriSampleStarterAssets}");
+                if (!IsSampleInstalled(PackageNameXri, XriSampleStarterAssets))
                     EditorGUILayout.LabelField(warnIconMsg);
                 else {
                     EditorGUILayout.LabelField(greenIconMsg);
@@ -295,8 +296,18 @@ namespace Edia.Installer {
                 EditorGUILayout.EndHorizontal();
 
                 EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.LabelField("[ XRI ] Hands Interaction Demo: ");
-                if (!IsSampleInstalled(PackageNameXri, "Hands Interaction Demo"))
+                EditorGUILayout.LabelField($"[ XRI ] {XriSampleHandsInteractionDemo}");
+                if (!IsSampleInstalled(PackageNameXri, XriSampleHandsInteractionDemo))
+                    EditorGUILayout.LabelField(warnIconMsg);
+                else {
+                    EditorGUILayout.LabelField(greenIconMsg);
+                }
+
+                EditorGUILayout.EndHorizontal();
+                
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField($"[ XRI ] {XriSampleXrDeviceSimulator}");
+                if (!IsSampleInstalled(PackageNameXri, XriSampleXrDeviceSimulator))
                     EditorGUILayout.LabelField(warnIconMsg);
                 else {
                     EditorGUILayout.LabelField(greenIconMsg);
@@ -305,8 +316,8 @@ namespace Edia.Installer {
                 EditorGUILayout.EndHorizontal();
 
                 EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.LabelField("[ XR Hands ] Hand Visualizer: ");
-                if (!IsSampleInstalled(PackageNameXrHands, "HandVisualizer"))
+                EditorGUILayout.LabelField($"[ XR Hands ] {XrHandsSampleHandVisualizer}");
+                if (!IsSampleInstalled(PackageNameXrHands, XrHandsSampleHandVisualizer))
                     EditorGUILayout.LabelField(warnIconMsg);
                 else {
                     EditorGUILayout.LabelField(greenIconMsg);
@@ -427,6 +438,14 @@ namespace Edia.Installer {
                 null,
                 "XRI Starter Assets",
                 XriSampleStarterAssets
+            ));
+            
+            _installQueue.Enqueue(new InstallStep(
+                InstallStepKind.Sample,
+                PackageNameXri,
+                null,
+                "XRI XR Device Simulator",
+                XriSampleXrDeviceSimulator
             ));
 
             _installQueue.Enqueue(new InstallStep(
