@@ -2,15 +2,15 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Unity.VisualScripting;
 using UnityEditor;
-using Upm = UnityEditor.PackageManager;
 using UnityEditor.PackageManager.Requests;
+using UnityEditor.PackageManager.UI;
 using UnityEngine;
+using Upm = UnityEditor.PackageManager;
 
 namespace Edia.Installer {
     
-    // v0.2.2 (2026-01-30, eioe) 
+    // v0.4.0 (2026-05-07, eioe)
 
     public class EdiaInstaller : EditorWindow {
         // EDIA package IDs (as in their package.json)
@@ -19,6 +19,7 @@ namespace Edia.Installer {
         private const string PackageNameLsl = "com.edia.lsl";
         private const string PackageNameEye = "com.edia.eye";
         private const string PackageNameRcas = "com.edia.rcas";
+        private const string PackageNameEyeQuest = "com.edia.eye.quest";
 
         // Unity XR packages
         private const string PackageNameXri = "com.unity.xr.interaction.toolkit";
@@ -27,6 +28,7 @@ namespace Edia.Installer {
         // XR samples
         private const string XriSampleStarterAssets = "Starter Assets";
         private const string XriSampleHandsInteractionDemo = "Hands Interaction Demo";
+        private const string XriSampleXrDeviceSimulator = "XR Device Simulator";
         private const string XrHandsSampleHandVisualizer = "HandVisualizer";
 
         // EDIA Git base URLs (without version/branch part)
@@ -35,6 +37,7 @@ namespace Edia.Installer {
         private const string GitBaseLsl = "https://github.com/edia-toolbox/edia_lsl.git";
         private const string GitBaseEye = "https://github.com/edia-toolbox/edia_eye.git";
         private const string GitBaseRcas = "https://github.com/edia-toolbox/edia_rcas.git";
+        private const string GitBaseEyeQuest = "https://github.com/edia-toolbox/edia_eye_quest.git";
 
         // Package Manager requests (for EDIA queue)
         private static AddRequest _addRequest;
@@ -50,18 +53,21 @@ namespace Edia.Installer {
         private static bool _installLsl;
         private static bool _installEye;
         private static bool _installRcas;
+        private static bool _installEyeQuest;
         private static string _uxfVersion = "main";
         private static string _coreVersion = "main";
         private static string _lslVersion = "main";
         private static string _eyeVersion = "main";
         private static string _rcasVersion = "main";
+        private static string _eyeQuestVersion = "main";
         private static string _uxfVersionInstalled;
         private static string _coreVersionInstalled;
         private static string _lslVersionInstalled;
         private static string _eyeVersionInstalled;
+        private static string _eyeQuestVersionInstalled;
         private static string _rcasVersionInstalled;
 
-        const float NameWidth = 80f;
+        const float NameWidth = 120f;
         const float ToggleWidth = 30f;
         const float LabelWidth = 110f;
         const float FieldWidth = 30f;
@@ -285,8 +291,8 @@ namespace Edia.Installer {
             else {
                 EditorGUILayout.LabelField("Required Samples:", EditorStyles.boldLabel);
                 EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.LabelField("[ XRI ] Starter Assets: ");
-                if (!IsSampleInstalled(PackageNameXri, "Starter Assets"))
+                EditorGUILayout.LabelField($"[ XRI ] {XriSampleStarterAssets}");
+                if (!IsSampleInstalled(PackageNameXri, XriSampleStarterAssets))
                     EditorGUILayout.LabelField(warnIconMsg);
                 else {
                     EditorGUILayout.LabelField(greenIconMsg);
@@ -295,8 +301,18 @@ namespace Edia.Installer {
                 EditorGUILayout.EndHorizontal();
 
                 EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.LabelField("[ XRI ] Hands Interaction Demo: ");
-                if (!IsSampleInstalled(PackageNameXri, "Hands Interaction Demo"))
+                EditorGUILayout.LabelField($"[ XRI ] {XriSampleHandsInteractionDemo}");
+                if (!IsSampleInstalled(PackageNameXri, XriSampleHandsInteractionDemo))
+                    EditorGUILayout.LabelField(warnIconMsg);
+                else {
+                    EditorGUILayout.LabelField(greenIconMsg);
+                }
+
+                EditorGUILayout.EndHorizontal();
+                
+                EditorGUILayout.BeginHorizontal();
+                EditorGUILayout.LabelField($"[ XRI ] {XriSampleXrDeviceSimulator}");
+                if (!IsSampleInstalled(PackageNameXri, XriSampleXrDeviceSimulator))
                     EditorGUILayout.LabelField(warnIconMsg);
                 else {
                     EditorGUILayout.LabelField(greenIconMsg);
@@ -305,8 +321,8 @@ namespace Edia.Installer {
                 EditorGUILayout.EndHorizontal();
 
                 EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.LabelField("[ XR Hands ] Hand Visualizer: ");
-                if (!IsSampleInstalled(PackageNameXrHands, "HandVisualizer"))
+                EditorGUILayout.LabelField($"[ XR Hands ] {XrHandsSampleHandVisualizer}");
+                if (!IsSampleInstalled(PackageNameXrHands, XrHandsSampleHandVisualizer))
                     EditorGUILayout.LabelField(warnIconMsg);
                 else {
                     EditorGUILayout.LabelField(greenIconMsg);
@@ -351,7 +367,7 @@ namespace Edia.Installer {
             if (!IsPackageInstalled(packageName)) return false;
 
             try {
-                var samples = Upm.UI.Sample.FindByPackage(packageName, null); // use current installed version
+                var samples = Sample.FindByPackage(packageName, null); // use current installed version
 
                 if (samples == null || !samples.Any()) {
                     return false;
@@ -428,6 +444,14 @@ namespace Edia.Installer {
                 "XRI Starter Assets",
                 XriSampleStarterAssets
             ));
+            
+            _installQueue.Enqueue(new InstallStep(
+                InstallStepKind.Sample,
+                PackageNameXri,
+                null,
+                "XRI XR Device Simulator",
+                XriSampleXrDeviceSimulator
+            ));
 
             _installQueue.Enqueue(new InstallStep(
                 InstallStepKind.Sample,
@@ -439,6 +463,7 @@ namespace Edia.Installer {
 
             StartQueuedInstalls("Importing required XR samples...");
         }
+#region EDIA modules
 
         // ----- EDIA SECTION -----
         private void DrawEdiaSection() {
@@ -463,6 +488,7 @@ namespace Edia.Installer {
             _lslVersion = _lslVersionInstalled ?? _lslVersion ?? string.Empty;
             _eyeVersion = _eyeVersionInstalled ?? _eyeVersion ?? string.Empty;
             _rcasVersion = _rcasVersionInstalled ?? _rcasVersion ?? string.Empty;
+            _eyeQuestVersion = _eyeQuestVersionInstalled ?? _eyeQuestVersion ?? string.Empty;
 
             EditorGUI.BeginDisabledGroup(_isInstallingEdia || !xrReady);
 
@@ -494,6 +520,15 @@ namespace Edia.Installer {
                 warnIconMsg);
 
             DrawPackageRow(
+                "EDIA RCAS",
+                PackageNameRcas,
+                ref _installRcas,
+                ref _rcasVersion,
+                ref _rcasVersionInstalled,
+                installedIconMsg,
+                warnIconMsg);
+            
+            DrawPackageRow(
                 "EDIA Eye",
                 PackageNameEye,
                 ref _installEye,
@@ -503,20 +538,21 @@ namespace Edia.Installer {
                 warnIconMsg);
 
             DrawPackageRow(
-                "EDIA RCAS",
-                PackageNameRcas,
-                ref _installRcas,
-                ref _rcasVersion,
-                ref _rcasVersionInstalled,
+                "EDIA Eye Quest",
+                PackageNameEyeQuest,
+                ref _installEyeQuest,
+                ref _eyeQuestVersion,
+                ref _eyeQuestVersionInstalled,
                 installedIconMsg,
                 warnIconMsg);
-
 
             // Dependency rules inside EDIA:
             if (_installCore) _installUxf = true;
             if (_installLsl) _installCore = true;
             if (_installEye) _installCore = true;
             if (_installRcas) _installCore = true;
+            if (_installEyeQuest) _installCore = true;
+            if (_installEyeQuest) _installEye = true;
 
             EditorGUILayout.Space();
 
@@ -587,6 +623,16 @@ namespace Edia.Installer {
                     $"EDIA RCAS ({_rcasVersion})"
                 ));
             }
+            
+            if (_installEyeQuest) {
+                string url = ParseVersionToGitString(_eyeQuestVersion, GitBaseEyeQuest, PackageNameEyeQuest);
+                _installQueue.Enqueue(new InstallStep(
+                    InstallStepKind.Package,
+                    PackageNameEyeQuest,
+                    url,
+                    $"EDIA Eye Quest ({_eyeQuestVersion})"
+                ));
+            }
 
             if (_installQueue.Count == 0) {
                 _statusMessage = "Nothing selected to install.";
@@ -628,7 +674,7 @@ namespace Edia.Installer {
             if (version.Contains('.')) {
                 if (version.StartsWith("v"))
                     version = version.Substring(1);
-                if (System.Version.TryParse(version, out _))
+                if (Version.TryParse(version, out _))
                     return baseString + "#v" + version;
                 Debug.LogError("Invalid version format. Must match SemVer (X.Y.Z).");
             }
@@ -710,7 +756,7 @@ namespace Edia.Installer {
                     ImportCurrentSample();
                 }
             }
-            catch (System.Exception ex) {
+            catch (Exception ex) {
                 Debug.LogError("[EDIA Installer] Exception while starting install:\n" + ex);
                 _statusMessage = "Error starting install. See Console.";
                 _isInstallingEdia = false;
@@ -774,7 +820,7 @@ namespace Edia.Installer {
         /// </summary>
         private static void TryImportSampleByName(string packageName, string sampleNameFragment, string friendlyLabel) {
             try {
-                var samples = Upm.UI.Sample.FindByPackage(packageName, null); // use current installed version
+                var samples = Sample.FindByPackage(packageName, null); // use current installed version
 
                 if (samples == null || !samples.Any()) {
                     Debug.LogWarning($"[EDIA Installer] No samples found for package '{packageName}'. " +
@@ -791,7 +837,7 @@ namespace Edia.Installer {
                     }
                     else {
                         Debug.Log($"[EDIA Installer] Importing {friendlyLabel} sample...");
-                        sample.Import(Upm.UI.Sample.ImportOptions.None);
+                        sample.Import(Sample.ImportOptions.None);
                     }
 
                     return;
@@ -800,7 +846,7 @@ namespace Edia.Installer {
                 Debug.LogWarning(
                     $"[EDIA Installer] Could not find sample '{sampleNameFragment}' in package '{packageName}'.");
             }
-            catch (System.Exception ex) {
+            catch (Exception ex) {
                 Debug.LogError(
                     $"[EDIA Installer] Failed to import sample '{friendlyLabel}' from '{packageName}': {ex}");
             }
@@ -808,9 +854,14 @@ namespace Edia.Installer {
 
         // Helper to repaint from static methods
         private static EdiaInstaller GetWindowIfOpen() {
-            return UnityEngine.Resources.FindObjectsOfTypeAll<EdiaInstaller>().FirstOrDefault();
+            return Resources.FindObjectsOfTypeAll<EdiaInstaller>().FirstOrDefault();
         }
+
+#endregion
+        
     }
 }
+
+
 
 #endif
