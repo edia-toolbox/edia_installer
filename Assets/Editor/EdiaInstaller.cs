@@ -10,7 +10,7 @@ using Upm = UnityEditor.PackageManager;
 
 namespace Edia.Installer {
     
-    // v0.4.0 (2026-05-07, eioe)
+    // v0.4.0 (2026-05-19, eioe)
 
     public class EdiaInstaller : EditorWindow {
         // EDIA package IDs (as in their package.json)
