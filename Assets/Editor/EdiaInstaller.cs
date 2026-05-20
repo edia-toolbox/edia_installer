@@ -10,7 +10,7 @@ using Upm = UnityEditor.PackageManager;
 
 namespace Edia.Installer {
     
-    // v0.4.0 (2026-05-19, eioe)
+    // v0.4.1 (2026-05-20, eioe)
 
     public class EdiaInstaller : EditorWindow {
         // EDIA package IDs (as in their package.json)
@@ -677,11 +677,6 @@ namespace Edia.Installer {
                 if (Version.TryParse(version, out _))
                     return baseString + "#v" + version;
                 Debug.LogError("Invalid version format. Must match SemVer (X.Y.Z).");
-            }
-
-            // special releases (e.g., exp-validet)
-            if (version.Contains('-')) {
-                return baseString + "#" + version;
             }
 
             // branches
