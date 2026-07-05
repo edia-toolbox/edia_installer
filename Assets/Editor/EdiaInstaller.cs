@@ -12,7 +12,6 @@ namespace Editor
     public class EdiaInstaller : EditorWindow
     {
         // EDIA package IDs (as in their package.json)
-        private const string PackageNameUxf = "com.edia.uxf";
         private const string PackageNameCore = "com.edia.core";
         private const string PackageNameLsl = "com.edia.lsl";
         private const string PackageNameEye = "com.edia.eye";
@@ -27,7 +26,6 @@ namespace Editor
         private const string XrHandsSampleHandVisualizer = "HandVisualizer";
 
         // EDIA Git base URLs (without version/branch part)
-        private const string GitBaseUxf = "https://github.com/edia-toolbox/edia_uxf.git?path=/Assets/com.edia.uxf#";
         private const string GitBaseCore = "https://github.com/edia-toolbox/edia_core.git?path=/Assets/com.edia.core#";
         private const string GitBaseLsl = "https://github.com/edia-toolbox/edia_lsl.git?path=/Assets/com.edia.lsl#";
         private const string GitBaseEye = "https://github.com/edia-toolbox/edia_eye.git?path=/Assets/com.edia.eye#";
@@ -42,14 +40,11 @@ namespace Editor
 
         // UI toggles and versions (EDIA)
         private static bool _installCore;
-        private static bool _installUxf;
         private static bool _installLsl;
         private static bool _installEye;
-        private static string _uxfVersion = "main";
         private static string _coreVersion = "main";
         private static string _lslVersion = "main";
         private static string _eyeVersion = "main";
-        private static string _uxfVersionInstalled;
         private static string _coreVersionInstalled;
         private static string _lslVersionInstalled;
         private static string _eyeVersionInstalled;
@@ -327,22 +322,12 @@ namespace Editor
             }
 
             // Ensure we have defaults (avoid resetting every frame)
-            if (string.IsNullOrEmpty(_uxfVersion)) _uxfVersion = "main";
             if (string.IsNullOrEmpty(_coreVersion)) _coreVersion = "main";
             if (string.IsNullOrEmpty(_lslVersion)) _lslVersion = "main";
             if (string.IsNullOrEmpty(_eyeVersion)) _eyeVersion = "main";
 
             EditorGUI.BeginDisabledGroup(_isInstallingEdia || !xrReady);
             
-            DrawPackageRow(
-                "EDIA UXF",
-                PackageNameUxf,
-                ref _installUxf,
-                ref _uxfVersion,
-                ref _uxfVersionInstalled,
-                installedIconMsg,
-                warnIconMsg);
-
             DrawPackageRow(
                 "EDIA Core",
                 PackageNameCore,
@@ -372,7 +357,6 @@ namespace Editor
             
 
             // Dependency rules inside EDIA:
-            if (_installCore) _installUxf = true;
             if (_installLsl) _installCore = true;
             if (_installEye) _installCore = true;
 
@@ -398,16 +382,6 @@ namespace Editor
 
             // Build a fresh queue based on user choices, in dependency order
             _installQueue.Clear();
-
-            if (_installUxf)
-            {
-                string url = GitBaseUxf + _uxfVersion;
-                _installQueue.Enqueue(new PackageToInstall(
-                    PackageNameUxf,
-                    url,
-                    $"EDIA UXF ({_uxfVersion})"
-                ));
-            }
 
             if (_installCore)
             {
