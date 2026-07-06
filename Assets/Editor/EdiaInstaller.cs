@@ -11,11 +11,6 @@ namespace Editor
 {
     public class EdiaInstaller : EditorWindow
     {
-        // EDIA package IDs (as in their package.json)
-        private const string PackageNameCore = "com.edia.core";
-        private const string PackageNameLsl = "com.edia.lsl";
-        private const string PackageNameEye = "com.edia.eye";
-
         // Unity XR packages
         private const string PackageNameXri = "com.unity.xr.interaction.toolkit";
         private const string PackageNameXrHands = "com.unity.xr.hands";
@@ -25,10 +20,52 @@ namespace Editor
         private const string XriSampleHandsInteractionDemo = "Hands Interaction Demo";
         private const string XrHandsSampleHandVisualizer = "HandVisualizer";
 
-        // EDIA Git base URLs (without version/branch part)
-        private const string GitBaseCore = "https://github.com/edia-toolbox/edia_core.git?path=/Assets/com.edia.core#";
-        private const string GitBaseLsl = "https://github.com/edia-toolbox/edia_lsl.git?path=/Assets/com.edia.lsl#";
-        private const string GitBaseEye = "https://github.com/edia-toolbox/edia_eye.git?path=/Assets/com.edia.eye#";
+        /// <summary>
+        /// Describes one installable EDIA module. The <see cref="Requires"/> keys must refer
+        /// to modules listed earlier in <see cref="_ediaPackages"/>, so a single forward pass
+        /// over that list is enough both to propagate "required" toggles and to install in
+        /// dependency order.
+        /// </summary>
+        private class PackageDef
+        {
+            public readonly string Key;
+            public readonly string DisplayName;
+            public readonly string PackageName; // as in package.json "name"
+            public readonly string RepoName;    // edia-toolbox GitHub repo name
+            public readonly string[] Requires;  // Keys of modules that must be installed alongside this one
+            public readonly int Indent;         // 0 = top-level module, 1 = headset-specific sub-module
+
+            public bool Install;
+            public string Version = "main";
+            public string InstalledVersion;
+
+            public PackageDef(string key, string displayName, string packageName, string repoName, int indent = 0, params string[] requires)
+            {
+                Key = key;
+                DisplayName = displayName;
+                PackageName = packageName;
+                RepoName = repoName;
+                Indent = indent;
+                Requires = requires ?? System.Array.Empty<string>();
+            }
+
+            public string GitUrl => $"https://github.com/edia-toolbox/{RepoName}.git?path=/Assets/{PackageName}#{Version}";
+        }
+
+        // All EDIA modules currently shipped from this workspace, in dependency order
+        // (a module's Requires always point to entries earlier in this list).
+        private static readonly List<PackageDef> _ediaPackages = new List<PackageDef>
+        {
+            new PackageDef("core", "EDIA Core", "com.edia.core", "edia_core"),
+            new PackageDef("lsl", "EDIA LSL", "com.edia.lsl", "edia_lsl", requires: new[] { "core" }),
+            new PackageDef("rcas", "EDIA Rcas", "com.edia.rcas", "edia_rcas"),
+            new PackageDef("survey", "EDIA Survey", "com.edia.survey", "edia_survey", requires: new[] { "core" }),
+            new PackageDef("eye", "EDIA Eye", "com.edia.eye", "edia_eye", requires: new[] { "core" }),
+            new PackageDef("eye.pico", "  - PICO", "com.edia.eye.pico", "edia_eye_pico", indent: 1, requires: new[] { "eye" }),
+            new PackageDef("eye.quest", "  - Quest", "com.edia.eye.quest", "edia_eye_quest", indent: 1, requires: new[] { "eye" }),
+            new PackageDef("eye.varjo", "  - Varjo", "com.edia.eye.varjo", "edia_eye_varjo", indent: 1, requires: new[] { "eye" }),
+            new PackageDef("eye.vive", "  - Vive", "com.edia.eye.vive", "edia_eye_vive", indent: 1, requires: new[] { "eye" }),
+        };
 
         // Package Manager requests (for EDIA queue)
         private static AddRequest _addRequest;
@@ -38,18 +75,7 @@ namespace Editor
         private static bool _isInstallingEdia;
         private static string _statusMessage = "Idle";
 
-        // UI toggles and versions (EDIA)
-        private static bool _installCore;
-        private static bool _installLsl;
-        private static bool _installEye;
-        private static string _coreVersion = "main";
-        private static string _lslVersion = "main";
-        private static string _eyeVersion = "main";
-        private static string _coreVersionInstalled;
-        private static string _lslVersionInstalled;
-        private static string _eyeVersionInstalled;
-        
-        const float NameWidth    = 80f;
+        const float NameWidth    = 130f;
         const float ToggleWidth  = 30f;
         const float LabelWidth   = 55f;
         const float FieldWidth   = 50f;
@@ -57,30 +83,54 @@ namespace Editor
         const float IconHeight   = 16f;
         const float VersionTextWidth = 70f;
 
-        void DrawPackageRow(string displayName, string packageName, ref bool installFlag, ref string desiredVersion,
-            ref string installedVersion, GUIContent installedIconMsg, GUIContent warnIconMsg) {
+        void DrawPackageRow(PackageDef pkg, GUIContent installedIconMsg, GUIContent warnIconMsg)
+        {
             EditorGUILayout.BeginHorizontal();
 
-            GUILayout.Label(displayName, GUILayout.Width(NameWidth));
-            installFlag = GUILayout.Toggle(installFlag, GUIContent.none, GUILayout.Width(ToggleWidth));
+            GUILayout.Label(pkg.DisplayName, GUILayout.Width(NameWidth));
+
+            // Modules required by another selected module are shown as forced-on and locked.
+            EditorGUI.BeginDisabledGroup(IsForcedOn(pkg));
+            pkg.Install = GUILayout.Toggle(pkg.Install, GUIContent.none, GUILayout.Width(ToggleWidth));
+            EditorGUI.EndDisabledGroup();
 
             GUILayout.Label("branch", GUILayout.Width(LabelWidth));
-            desiredVersion = GUILayout.TextField(desiredVersion, GUILayout.Width(FieldWidth));
+            pkg.Version = GUILayout.TextField(pkg.Version, GUILayout.Width(FieldWidth));
 
-            if (IsPackageInstalled(packageName, out installedVersion))
+            if (IsPackageInstalled(pkg.PackageName, out pkg.InstalledVersion))
             {
                 GUILayout.Label(installedIconMsg, GUILayout.Width(IconWidth), GUILayout.Height(IconHeight));
-                GUILayout.Label(installedVersion, GUILayout.Width(VersionTextWidth));
+                GUILayout.Label(pkg.InstalledVersion, GUILayout.Width(VersionTextWidth));
             }
             else
             {
                 GUILayout.Label(warnIconMsg, GUILayout.Width(IconWidth), GUILayout.Height(IconHeight));
             }
-            
+
             EditorGUILayout.EndHorizontal();
         }
-        
-        // Data structure for queued EDIA installs
+
+        // True if some other selected module requires this one (so its toggle is forced on).
+        private static bool IsForcedOn(PackageDef pkg)
+        {
+            return _ediaPackages.Any(p => p.Install && p.Requires.Contains(pkg.Key));
+        }
+
+        // Turns on the toggle of every module required (directly or transitively) by a selected module.
+        // A single forward pass suffices because Requires only ever points earlier in the list.
+        private static void PropagateRequirements()
+        {
+            foreach (var pkg in _ediaPackages)
+            {
+                if (!pkg.Install) continue;
+                foreach (var reqKey in pkg.Requires)
+                {
+                    var required = _ediaPackages.First(p => p.Key == reqKey);
+                    required.Install = true;
+                }
+            }
+        }
+
         private struct PackageToInstall
         {
             public string PackageName;
@@ -98,11 +148,11 @@ namespace Editor
         private static Queue<PackageToInstall> _installQueue = new Queue<PackageToInstall>();
         private static PackageToInstall _currentPackage;
 
-        [MenuItem("Tools/EDIA Installer")]
+        [MenuItem("EDIA/Installer")]
         public static void ShowWindow()
         {
             var window = GetWindow<EdiaInstaller>("EDIA Installer");
-            window.minSize = new Vector2(500, 120);
+            window.minSize = new Vector2(520, 160);
         }
 
         private void OnGUI()
@@ -142,7 +192,7 @@ namespace Editor
             warnIconMsg.text = " Not Installed";
             GUIContent greenIconMsg = EditorGUIUtility.IconContent("TestPassed");
             greenIconMsg.text = " Installed";
-            
+
             EditorGUILayout.BeginHorizontal();
             EditorGUILayout.LabelField("XR Interaction Toolkit: ");
             if (xriInstalled) {
@@ -152,7 +202,7 @@ namespace Editor
                 EditorGUILayout.LabelField(warnIconMsg);
             }
             EditorGUILayout.EndHorizontal();
-            
+
             EditorGUILayout.BeginHorizontal();
             EditorGUILayout.LabelField("XR Hands: ");
             if (xrHandsInstalled) {
@@ -162,7 +212,7 @@ namespace Editor
                 EditorGUILayout.LabelField(warnIconMsg);
             }
             EditorGUILayout.EndHorizontal();
-            
+
             EditorGUILayout.Space();
 
             EditorGUI.BeginDisabledGroup(_isInstallingEdia);
@@ -189,7 +239,7 @@ namespace Editor
                     EditorGUILayout.LabelField(greenIconMsg);
                 }
                 EditorGUILayout.EndHorizontal();
-                
+
                 EditorGUILayout.BeginHorizontal();
                 EditorGUILayout.LabelField("[ XRI ] Hands Interaction Demo: ");
                 if (!IsSampleInstalled(PackageNameXri, "Hands Interaction Demo"))
@@ -198,7 +248,7 @@ namespace Editor
                     EditorGUILayout.LabelField(greenIconMsg);
                 }
                 EditorGUILayout.EndHorizontal();
-                
+
                 EditorGUILayout.BeginHorizontal();
                 EditorGUILayout.LabelField("[ XR Hands ] Hand Visualizer: ");
                 if (!IsSampleInstalled(PackageNameXrHands, "HandVisualizer"))
@@ -208,7 +258,7 @@ namespace Editor
                 }
                 EditorGUILayout.EndHorizontal();
             }
-            
+
             EditorGUI.BeginDisabledGroup(_isInstallingEdia);
             if (GUILayout.Button("Install required Samples (XRI + XR Hands)", GUILayout.Height(24)))
             {
@@ -223,7 +273,7 @@ namespace Editor
             var info = UnityEditor.PackageManager.PackageInfo.FindForAssetPath("Packages/" + packageName);
             return info != null;
         }
-        
+
         private static bool IsPackageInstalled(string packageName, out string version)
         {
             // Uses PackageInfo to check synchronously if the package exists
@@ -238,7 +288,7 @@ namespace Editor
 
         private static bool IsSampleInstalled(string packageName, string sampleName) {
             if (!IsPackageInstalled(packageName)) return false;
-            
+
             var samples = Sample.FindByPackage(packageName, null); // use current installed version
 
             if (samples == null || !samples.Any()) {
@@ -253,7 +303,7 @@ namespace Editor
             }
             return false;
         }
-        
+
 
         private void InstallXrPackages()
         {
@@ -290,7 +340,7 @@ namespace Editor
                 XrHandsSampleHandVisualizer,
                 "XR Hands Hand Visualizer"
             );
-                    
+
             TryImportSampleByName(
                 PackageNameXri,
                 XriSampleStarterAssets,
@@ -303,7 +353,7 @@ namespace Editor
                 "XRI Hands Interaction Demo"
             );
         }
-        
+
         // ----- EDIA SECTION -----
         private void DrawEdiaSection() {
 
@@ -321,44 +371,21 @@ namespace Editor
                     MessageType.Warning);
             }
 
-            // Ensure we have defaults (avoid resetting every frame)
-            if (string.IsNullOrEmpty(_coreVersion)) _coreVersion = "main";
-            if (string.IsNullOrEmpty(_lslVersion)) _lslVersion = "main";
-            if (string.IsNullOrEmpty(_eyeVersion)) _eyeVersion = "main";
-
             EditorGUI.BeginDisabledGroup(_isInstallingEdia || !xrReady);
-            
-            DrawPackageRow(
-                "EDIA Core",
-                PackageNameCore,
-                ref _installCore,
-                ref _coreVersion,
-                ref _coreVersionInstalled,
-                installedIconMsg,
-                warnIconMsg);
 
-            DrawPackageRow(
-                "EDIA LSL",
-                PackageNameLsl,
-                ref _installLsl,
-                ref _lslVersion,
-                ref _lslVersionInstalled,
-                installedIconMsg,
-                warnIconMsg);
+            // Selecting a module auto-selects the modules it requires (e.g. any eye-tracking
+            // headset module pulls in "EDIA Eye", which in turn pulls in "EDIA Core").
+            PropagateRequirements();
 
-            DrawPackageRow(
-                "EDIA Eye",
-                PackageNameEye,
-                ref _installEye,
-                ref _eyeVersion,
-                ref _eyeVersionInstalled,
-                installedIconMsg,
-                warnIconMsg);
-            
+            foreach (var pkg in _ediaPackages)
+            {
+                DrawPackageRow(pkg, installedIconMsg, warnIconMsg);
+            }
 
-            // Dependency rules inside EDIA:
-            if (_installLsl) _installCore = true;
-            if (_installEye) _installCore = true;
+            EditorGUILayout.HelpBox(
+                "Select a headset-specific eye-tracking module (PICO/Quest/Varjo/Vive) to also install " +
+                "EDIA Eye and EDIA Core automatically.",
+                MessageType.None);
 
             EditorGUILayout.Space();
 
@@ -380,36 +407,20 @@ namespace Editor
                 return;
             }
 
-            // Build a fresh queue based on user choices, in dependency order
+            // Modules are selected in dependency order already (see _ediaPackages), so the
+            // queue built from them installs dependencies before the modules that need them.
+            PropagateRequirements();
+
             _installQueue.Clear();
 
-            if (_installCore)
+            foreach (var pkg in _ediaPackages)
             {
-                string url = GitBaseCore + _coreVersion;
-                _installQueue.Enqueue(new PackageToInstall(
-                    PackageNameCore,
-                    url,
-                    $"EDIA Core ({_coreVersion})"
-                ));
-            }
+                if (!pkg.Install) continue;
 
-            if (_installLsl)
-            {
-                string url = GitBaseLsl + _lslVersion;
                 _installQueue.Enqueue(new PackageToInstall(
-                    PackageNameLsl,
-                    url,
-                    $"EDIA LSL ({_lslVersion})"
-                ));
-            }
-
-            if (_installEye)
-            {
-                string url = GitBaseEye + _eyeVersion;
-                _installQueue.Enqueue(new PackageToInstall(
-                    PackageNameEye,
-                    url,
-                    $"EDIA Eye ({_eyeVersion})"
+                    pkg.PackageName,
+                    pkg.GitUrl,
+                    $"{pkg.DisplayName.Trim()} ({pkg.Version})"
                 ));
             }
 
