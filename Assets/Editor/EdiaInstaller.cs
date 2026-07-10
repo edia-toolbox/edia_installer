@@ -58,7 +58,7 @@ namespace Editor
         {
             new PackageDef("core", "EDIA Core", "com.edia.core", "edia_core"),
             new PackageDef("lsl", "EDIA LSL", "com.edia.lsl", "edia_lsl", requires: new[] { "core" }),
-            new PackageDef("rcas", "EDIA Rcas", "com.edia.rcas", "edia_rcas"),
+            new PackageDef("rcas", "EDIA Rcas", "com.edia.rcas", "edia_rcas", requires: new[] { "core" }),
             new PackageDef("survey", "EDIA Survey", "com.edia.survey", "edia_survey", requires: new[] { "core" }),
             new PackageDef("eye", "EDIA Eye", "com.edia.eye", "edia_eye", requires: new[] { "core" }),
             new PackageDef("eye.pico", "  - PICO", "com.edia.eye.pico", "edia_eye_pico", indent: 1, requires: new[] { "eye" }),
