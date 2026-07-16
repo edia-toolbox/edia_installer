@@ -15,7 +15,7 @@ namespace Editor
         private const string ScriptAssetPath   = "Assets/Editor/EdiaInstaller.cs";
         private const string OutputRelativePath = "LatestRelease/EdiaInstaller.unitypackage";
 
-        [MenuItem("EDIA/Export Installer Package")]
+        [MenuItem("EDIA/DevTools/Export Installer Package")]
         public static void ExportInstallerPackage()
         {
             if (string.IsNullOrEmpty(AssetDatabase.AssetPathToGUID(ScriptAssetPath)))
