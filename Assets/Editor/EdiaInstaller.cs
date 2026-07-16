@@ -75,13 +75,67 @@ namespace Editor
         private static bool _isInstallingEdia;
         private static string _statusMessage = "Idle";
 
-        const float NameWidth    = 130f;
+        const float NameWidth    = 200f; // shared name-column width: keeps checkboxes/toggles aligned across all steps
         const float ToggleWidth  = 30f;
         const float LabelWidth   = 55f;
         const float FieldWidth   = 50f;
         const float IconWidth    = 90f;
         const float IconHeight   = 16f;
         const float VersionTextWidth = 70f;
+
+        // ---------- Step-header styling ----------
+        private static readonly Color StepAccent = new Color(0.30f, 0.57f, 0.93f);
+        private GUIStyle _stepTitleStyle;
+        private GUIStyle _stepBadgeStyle;
+        private GUIStyle _introStyle;
+        private Vector2  _scroll;
+
+        /// <summary>Draws a prominent "STEP N — Title" header with a numbered accent badge, so the three
+        /// installation stages read as clearly separate steps.</summary>
+        private void DrawStepHeader(int step, string title)
+        {
+            _stepTitleStyle ??= new GUIStyle(EditorStyles.boldLabel) { fontSize = 15, alignment = TextAnchor.MiddleLeft };
+            _stepBadgeStyle ??= new GUIStyle(EditorStyles.boldLabel)
+            {
+                fontSize = 13, alignment = TextAnchor.MiddleCenter, normal = { textColor = Color.white }
+            };
+
+            EditorGUILayout.Space(6);
+
+            var row   = EditorGUILayout.GetControlRect(false, 26);
+            var badge = new Rect(row.x, row.y + 1f, 24f, 24f);
+            EditorGUI.DrawRect(badge, StepAccent);
+            GUI.Label(badge, step.ToString(), _stepBadgeStyle);
+
+            var label = new Rect(badge.xMax + 8f, row.y, row.width - badge.width - 8f, 26f);
+            GUI.Label(label, $"STEP {step}  —  {title}", _stepTitleStyle);
+
+            var underline = new Rect(row.x, row.yMax, row.width, 1f);
+            EditorGUI.DrawRect(underline, new Color(StepAccent.r, StepAccent.g, StepAccent.b, 0.4f));
+
+            EditorGUILayout.Space(4);
+        }
+
+        /// <summary>Plain wrapped description under a step title — no icon, reads like the other body text.</summary>
+        private void DrawIntro(string text)
+        {
+            _introStyle ??= new GUIStyle(EditorStyles.wordWrappedLabel);
+            GUILayout.Label(text, _introStyle);
+            EditorGUILayout.Space(2);
+        }
+
+        /// <summary>A checklist row: item name in the shared name column, then a read-only checkbox that ticks
+        /// once the item is installed/imported. Used by Steps 1 and 2 so their checkboxes line up vertically
+        /// with the module toggles in Step 3.</summary>
+        private void DrawStatusRow(string label, bool done)
+        {
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Label(label, GUILayout.Width(NameWidth));
+            using (new EditorGUI.DisabledScope(true))
+                GUILayout.Toggle(done, GUIContent.none, GUILayout.Width(ToggleWidth));
+            GUILayout.FlexibleSpace();
+            EditorGUILayout.EndHorizontal();
+        }
 
         void DrawPackageRow(PackageDef pkg, GUIContent installedIconMsg, GUIContent warnIconMsg)
         {
@@ -152,115 +206,76 @@ namespace Editor
         public static void ShowWindow()
         {
             var window = GetWindow<EdiaInstaller>("EDIA Installer");
-            window.minSize = new Vector2(520, 160);
+            window.minSize = new Vector2(560, 300);
         }
 
         private void OnGUI()
         {
+            _scroll = EditorGUILayout.BeginScrollView(_scroll);
+
             EditorGUILayout.LabelField("EDIA Package Installer", EditorStyles.boldLabel);
-            EditorGUILayout.Space();
 
-            // -------- SECTION 1: XR Dependencies --------
-            DrawXrSection();
+            // -------- STEP 1: XR Dependencies --------
+            DrawStepHeader(1, "XR Dependencies");
+            DrawXrDependenciesSection();
 
-            EditorGUILayout.Space();
-            EditorGUILayout.LabelField("", GUI.skin.horizontalSlider); // separator line
-            EditorGUILayout.Space();
+            // -------- STEP 2: Required Samples --------
+            DrawStepHeader(2, "Required Samples");
+            DrawSamplesSection();
 
-            // -------- SECTION 2: EDIA Packages --------
+            // -------- STEP 3: EDIA Packages --------
+            DrawStepHeader(3, "EDIA Packages");
             DrawEdiaSection();
 
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("", GUI.skin.horizontalSlider); // separator line
             EditorGUILayout.LabelField("Status:", EditorStyles.boldLabel);
             EditorGUILayout.LabelField(_statusMessage);
-            EditorGUILayout.LabelField("", GUI.skin.horizontalSlider); // separator line
+
+            EditorGUILayout.EndScrollView();
         }
 
-        // ----- XR SECTION -----
-        private void DrawXrSection()
+        // ----- STEP 1: XR DEPENDENCIES -----
+        private void DrawXrDependenciesSection()
         {
-            EditorGUILayout.LabelField("1) XR Dependencies", EditorStyles.boldLabel);
+            bool xriInstalled = IsPackageInstalled(PackageNameXri);
+            bool xrHandsInstalled = IsPackageInstalled(PackageNameXrHands);
 
-            string version_xri = "";
-            string version_xrhands = "";
-            bool xriInstalled = IsPackageInstalled(PackageNameXri, out version_xri);
-            bool xrHandsInstalled = IsPackageInstalled(PackageNameXrHands, out version_xrhands);
-            bool xrReady = xriInstalled && xrHandsInstalled;
+            DrawIntro("EDIA's XR rig is built on Unity's XR Interaction Toolkit and XR Hands. " +
+                      "Both packages must be present before the rig or any EDIA module works.");
 
-            GUIContent warnIconMsg = EditorGUIUtility.IconContent("console.warnicon");
-            warnIconMsg.text = " Not Installed";
-            GUIContent greenIconMsg = EditorGUIUtility.IconContent("TestPassed");
-            greenIconMsg.text = " Installed";
-
-            EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField("XR Interaction Toolkit: ");
-            if (xriInstalled) {
-                EditorGUILayout.LabelField(greenIconMsg);
-                EditorGUILayout.LabelField($"(v{version_xri})");
-            } else {
-                EditorGUILayout.LabelField(warnIconMsg);
-            }
-            EditorGUILayout.EndHorizontal();
-
-            EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField("XR Hands: ");
-            if (xrHandsInstalled) {
-                EditorGUILayout.LabelField(greenIconMsg);
-                EditorGUILayout.LabelField($"(v{version_xrhands})");
-            } else {
-                EditorGUILayout.LabelField(warnIconMsg);
-            }
-            EditorGUILayout.EndHorizontal();
+            DrawStatusRow("XR Interaction Toolkit", xriInstalled);
+            DrawStatusRow("XR Hands", xrHandsInstalled);
 
             EditorGUILayout.Space();
 
             EditorGUI.BeginDisabledGroup(_isInstallingEdia);
-            if (GUILayout.Button("Install / Update XR Packages (XRI + XR Hands)", GUILayout.Height(24)))
+            if (GUILayout.Button("Install", GUILayout.Height(26)))
             {
                 InstallXrPackages();
             }
             EditorGUI.EndDisabledGroup();
+        }
+
+        // ----- STEP 2: REQUIRED SAMPLES -----
+        private void DrawSamplesSection()
+        {
+            bool xrReady = IsPackageInstalled(PackageNameXri) && IsPackageInstalled(PackageNameXrHands);
+
+            DrawIntro("The XR rig reuses assets that ship as samples with those packages — the Starter Assets " +
+                      "locomotion/teleport setup and the Hand Visualizer meshes. Without them the rig has broken references.");
 
             if (!xrReady)
-            {
-                EditorGUILayout.HelpBox(
-                    "Install XR Interaction Toolkit and XR Hands first. " +
-                    "You can then install EDIA packages and XR samples.",
-                    MessageType.Info);
-            }
-            else {
-                EditorGUILayout.LabelField("Required Samples:", EditorStyles.boldLabel);
-                EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.LabelField("[ XRI ] Starter Assets: ");
-                if (!IsSampleInstalled(PackageNameXri, "Starter Assets"))
-                    EditorGUILayout.LabelField(warnIconMsg);
-                else {
-                    EditorGUILayout.LabelField(greenIconMsg);
-                }
-                EditorGUILayout.EndHorizontal();
+                DrawIntro("Install the XR dependencies in Step 1 first — these samples ship with those packages.");
 
-                EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.LabelField("[ XRI ] Hands Interaction Demo: ");
-                if (!IsSampleInstalled(PackageNameXri, "Hands Interaction Demo"))
-                    EditorGUILayout.LabelField(warnIconMsg);
-                else {
-                    EditorGUILayout.LabelField(greenIconMsg);
-                }
-                EditorGUILayout.EndHorizontal();
+            DrawStatusRow("Starter Assets", IsSampleInstalled(PackageNameXri, "Starter Assets"));
+            DrawStatusRow("Hands Interaction Demo", IsSampleInstalled(PackageNameXri, "Hands Interaction Demo"));
+            DrawStatusRow("Hand Visualizer", IsSampleInstalled(PackageNameXrHands, "HandVisualizer"));
 
-                EditorGUILayout.BeginHorizontal();
-                EditorGUILayout.LabelField("[ XR Hands ] Hand Visualizer: ");
-                if (!IsSampleInstalled(PackageNameXrHands, "HandVisualizer"))
-                    EditorGUILayout.LabelField(warnIconMsg);
-                else {
-                    EditorGUILayout.LabelField(greenIconMsg);
-                }
-                EditorGUILayout.EndHorizontal();
-            }
+            EditorGUILayout.Space();
 
-            EditorGUI.BeginDisabledGroup(_isInstallingEdia);
-            if (GUILayout.Button("Install required Samples (XRI + XR Hands)", GUILayout.Height(24)))
+            EditorGUI.BeginDisabledGroup(_isInstallingEdia || !xrReady);
+            if (GUILayout.Button("Install", GUILayout.Height(26)))
             {
                 InstallSamples();
             }
@@ -354,22 +369,20 @@ namespace Editor
             );
         }
 
-        // ----- EDIA SECTION -----
+        // ----- STEP 3: EDIA PACKAGES -----
         private void DrawEdiaSection() {
 
             GUIContent warnIconMsg = EditorGUIUtility.IconContent("Toolbar Minus");
             warnIconMsg.text = "Not Installed";
             GUIContent installedIconMsg = EditorGUIUtility.IconContent("TestPassed");
 
-            EditorGUILayout.LabelField("2) Install EDIA Packages", EditorStyles.boldLabel);
-
             bool xrReady = IsPackageInstalled(PackageNameXri) && IsPackageInstalled(PackageNameXrHands);
 
-            if (!xrReady) {
-                EditorGUILayout.HelpBox(
-                    "XR Interaction Toolkit and XR Hands must be installed before installing EDIA packages.",
-                    MessageType.Warning);
-            }
+            DrawIntro("Pick the EDIA modules to install. Selecting a headset eye-tracking module " +
+                      "(PICO/Quest/Varjo/Vive) also selects EDIA Eye and EDIA Core automatically.");
+
+            if (!xrReady)
+                DrawIntro("Install the XR dependencies in Step 1 first.");
 
             EditorGUI.BeginDisabledGroup(_isInstallingEdia || !xrReady);
 
@@ -382,14 +395,9 @@ namespace Editor
                 DrawPackageRow(pkg, installedIconMsg, warnIconMsg);
             }
 
-            EditorGUILayout.HelpBox(
-                "Select a headset-specific eye-tracking module (PICO/Quest/Varjo/Vive) to also install " +
-                "EDIA Eye and EDIA Core automatically.",
-                MessageType.None);
-
             EditorGUILayout.Space();
 
-            if (GUILayout.Button("Install EDIA Packages", GUILayout.Height(30)))
+            if (GUILayout.Button("Install", GUILayout.Height(26)))
             {
                 StartEdiaInstalls();
             }
