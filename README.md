@@ -9,10 +9,9 @@ Covers every EDIA module currently shipped from [edia-toolbox](https://github.co
 <img width="511" alt="EDIA Installer window" src="./docs/installer-window.png" />
 
 ## Installation
-To try out, clone this project -> open **"EDIA > Installer"** from the main menu, and see if you can take it from there.   
+Two approaches:
+1. In an existing Unity project -> download and import the [unitypackage](./LatestRelease/EdiaInstaller.unitypackage) to your Unity project. 
+2. Fresh start -> Clone this project -> open **"EDIA > Installer"** from the main menu, and take it from there.   
   
-**see here:**  
-<img width="600" alt="EDIA > Installer menu entry" src="./docs/installer-menu.png" />
-
-
-Alternatively, you can simply download and import the [unitypackage](./Packages/EdiaInstaller.unitypackage) to a Unity project of your liking. This will also give you the same entry in your menu bar.  
+**It's in the menu bar:**  
+<img width="120" alt="EDIA > Installer menu entry" src="./docs/installer-menu.png" />

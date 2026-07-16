@@ -75,6 +75,12 @@ namespace Editor
         private static bool _isInstallingEdia;
         private static string _statusMessage = "Idle";
 
+        // A package/sample install is async and triggers a domain reload, so "step complete" cannot be logged
+        // inline. Instead a pending flag is stored in SessionState (which survives the reload) when the install
+        // is requested, and cleared with a Console log once the items report as installed (see CheckStepCompletion).
+        const string PendingXrKey      = "EdiaInstaller.PendingXr";
+        const string PendingSamplesKey = "EdiaInstaller.PendingSamples";
+
         const float NameWidth    = 200f; // shared name-column width: keeps checkboxes/toggles aligned across all steps
         const float ToggleWidth  = 30f;
         const float LabelWidth   = 55f;
@@ -135,6 +141,28 @@ namespace Editor
                 GUILayout.Toggle(done, GUIContent.none, GUILayout.Width(ToggleWidth));
             GUILayout.FlexibleSpace();
             EditorGUILayout.EndHorizontal();
+        }
+
+        /// <summary>Logs a one-off "step complete" line to the Console once a pending async step (XR packages or
+        /// required samples) has finished — i.e. once its items report as installed/imported after the import and
+        /// any domain reload. The pending flag lives in SessionState so it survives that reload.</summary>
+        private void CheckStepCompletion()
+        {
+            if (SessionState.GetBool(PendingXrKey, false) &&
+                IsPackageInstalled(PackageNameXri) && IsPackageInstalled(PackageNameXrHands))
+            {
+                Debug.Log("[EDIA Installer] Step 1 complete: XR Interaction Toolkit and XR Hands are installed.");
+                SessionState.SetBool(PendingXrKey, false);
+            }
+
+            if (SessionState.GetBool(PendingSamplesKey, false) &&
+                IsSampleInstalled(PackageNameXri, XriSampleStarterAssets) &&
+                IsSampleInstalled(PackageNameXri, XriSampleHandsInteractionDemo) &&
+                IsSampleInstalled(PackageNameXrHands, XrHandsSampleHandVisualizer))
+            {
+                Debug.Log("[EDIA Installer] Step 2 complete: required samples imported.");
+                SessionState.SetBool(PendingSamplesKey, false);
+            }
         }
 
         void DrawPackageRow(PackageDef pkg, GUIContent installedIconMsg, GUIContent warnIconMsg)
@@ -211,6 +239,8 @@ namespace Editor
 
         private void OnGUI()
         {
+            CheckStepCompletion();
+
             _scroll = EditorGUILayout.BeginScrollView(_scroll);
 
             EditorGUILayout.LabelField("EDIA Package Installer", EditorStyles.boldLabel);
@@ -344,12 +374,18 @@ namespace Editor
                 Client.Add(PackageNameXrHands);
             }
 
+            SessionState.SetBool(PendingXrKey, true); // log completion once both report installed (after reload)
             _statusMessage = "Requested XR packages via Package Manager. Unity may reload while importing.";
             Repaint();
         }
 
 
         private void InstallSamples() {
+            bool allAlreadyImported =
+                IsSampleInstalled(PackageNameXri, XriSampleStarterAssets) &&
+                IsSampleInstalled(PackageNameXri, XriSampleHandsInteractionDemo) &&
+                IsSampleInstalled(PackageNameXrHands, XrHandsSampleHandVisualizer);
+
             TryImportSampleByName(
                 PackageNameXrHands,
                 XrHandsSampleHandVisualizer,
@@ -367,6 +403,9 @@ namespace Editor
                 XriSampleHandsInteractionDemo,
                 "XRI Hands Interaction Demo"
             );
+
+            if (!allAlreadyImported)
+                SessionState.SetBool(PendingSamplesKey, true); // log completion once all three report imported
         }
 
         // ----- STEP 3: EDIA PACKAGES -----
@@ -501,6 +540,7 @@ namespace Editor
             {
                 _statusMessage = "All EDIA installations completed.";
                 _isInstallingEdia = false;
+                Debug.Log("[EDIA Installer] Step 3 complete: selected EDIA packages installed.");
                 GetWindowIfOpen()?.Repaint();
                 return;
             }
