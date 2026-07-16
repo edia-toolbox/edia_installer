@@ -270,6 +270,7 @@ namespace Editor
         {
             bool xriInstalled = IsPackageInstalled(PackageNameXri);
             bool xrHandsInstalled = IsPackageInstalled(PackageNameXrHands);
+            bool xrDone = xriInstalled && xrHandsInstalled;
 
             DrawIntro("EDIA's XR rig is built on Unity's XR Interaction Toolkit and XR Hands. " +
                       "Both packages must be present before the rig or any EDIA module works.");
@@ -279,7 +280,8 @@ namespace Editor
 
             EditorGUILayout.Space();
 
-            EditorGUI.BeginDisabledGroup(_isInstallingEdia);
+            // Nothing left to install once both packages are present.
+            EditorGUI.BeginDisabledGroup(_isInstallingEdia || xrDone);
             if (GUILayout.Button("Install", GUILayout.Height(26)))
             {
                 InstallXrPackages();
@@ -292,19 +294,25 @@ namespace Editor
         {
             bool xrReady = IsPackageInstalled(PackageNameXri) && IsPackageInstalled(PackageNameXrHands);
 
+            bool starterAssets = IsSampleInstalled(PackageNameXri, XriSampleStarterAssets);
+            bool handsDemo      = IsSampleInstalled(PackageNameXri, XriSampleHandsInteractionDemo);
+            bool handVisualizer = IsSampleInstalled(PackageNameXrHands, XrHandsSampleHandVisualizer);
+            bool samplesDone    = starterAssets && handsDemo && handVisualizer;
+
             DrawIntro("The XR rig reuses assets that ship as samples with those packages — the Starter Assets " +
                       "locomotion/teleport setup and the Hand Visualizer meshes. Without them the rig has broken references.");
 
             if (!xrReady)
                 DrawIntro("Install the XR dependencies in Step 1 first — these samples ship with those packages.");
 
-            DrawStatusRow("Starter Assets", IsSampleInstalled(PackageNameXri, "Starter Assets"));
-            DrawStatusRow("Hands Interaction Demo", IsSampleInstalled(PackageNameXri, "Hands Interaction Demo"));
-            DrawStatusRow("Hand Visualizer", IsSampleInstalled(PackageNameXrHands, "HandVisualizer"));
+            DrawStatusRow("Starter Assets", starterAssets);
+            DrawStatusRow("Hands Interaction Demo", handsDemo);
+            DrawStatusRow("Hand Visualizer", handVisualizer);
 
             EditorGUILayout.Space();
 
-            EditorGUI.BeginDisabledGroup(_isInstallingEdia || !xrReady);
+            // Nothing left to import once all three samples are present.
+            EditorGUI.BeginDisabledGroup(_isInstallingEdia || !xrReady || samplesDone);
             if (GUILayout.Button("Install", GUILayout.Height(26)))
             {
                 InstallSamples();
