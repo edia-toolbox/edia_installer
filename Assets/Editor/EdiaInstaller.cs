@@ -424,14 +424,23 @@ namespace Editor
             GUIContent installedIconMsg = EditorGUIUtility.IconContent("TestPassed");
 
             bool xrReady = IsPackageInstalled(PackageNameXri) && IsPackageInstalled(PackageNameXrHands);
+            bool samplesReady = IsSampleInstalled(PackageNameXri, XriSampleStarterAssets)
+                             && IsSampleInstalled(PackageNameXri, XriSampleHandsInteractionDemo)
+                             && IsSampleInstalled(PackageNameXrHands, XrHandsSampleHandVisualizer);
 
             DrawIntro("Pick the EDIA modules to install. Selecting a headset eye-tracking module " +
                       "(PICO/Quest/Varjo/Vive) also selects EDIA Eye and EDIA Core automatically.");
 
+            // The EDIA rig references the Step-2 samples (Starter Assets locomotion/teleport, Hand Visualizer
+            // meshes). Installing modules before those samples exist reproduces the "missing Samples" breakage
+            // (dangling teleport refs, hand-mesh NRE), so Step 3 is gated on both XR packages AND samples.
             if (!xrReady)
                 DrawIntro("Install the XR dependencies in Step 1 first.");
+            else if (!samplesReady)
+                DrawIntro("Import the required samples in Step 2 first — the EDIA rig references them, and " +
+                          "installing modules without the samples leaves broken references.");
 
-            EditorGUI.BeginDisabledGroup(_isInstallingEdia || !xrReady);
+            EditorGUI.BeginDisabledGroup(_isInstallingEdia || !xrReady || !samplesReady);
 
             // Selecting a module auto-selects the modules it requires (e.g. any eye-tracking
             // headset module pulls in "EDIA Eye", which in turn pulls in "EDIA Core").
