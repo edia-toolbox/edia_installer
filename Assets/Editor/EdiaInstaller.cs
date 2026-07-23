@@ -7,7 +7,7 @@ using UnityEditor.PackageManager.Requests;
 using UnityEditor.PackageManager.UI; // for Sample API
 using UnityEngine;
 
-namespace Editor
+namespace Edia.Installer
 {
     public class EdiaInstaller : EditorWindow
     {

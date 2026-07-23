@@ -3,7 +3,7 @@ using System.IO;
 using UnityEditor;
 using UnityEngine;
 
-namespace Editor
+namespace Edia.Installer
 {
     /// <summary>
     /// Project-only helper: exports the installer's single script (<c>EdiaInstaller.cs</c>) as a
