@@ -18,6 +18,7 @@ namespace Edia.Installer
         // XR samples
         private const string XriSampleStarterAssets = "Starter Assets";
         private const string XriSampleHandsInteractionDemo = "Hands Interaction Demo";
+        private const string XriSampleXrDeviceSimulator = "XR Device Simulator";
         private const string XrHandsSampleHandVisualizer = "HandVisualizer";
 
         /// <summary>
@@ -54,9 +55,16 @@ namespace Edia.Installer
 
         // All EDIA modules currently shipped from this workspace, in dependency order
         // (a module's Requires always point to entries earlier in this list).
+        //
+        // EDIA UXF: every published EDIA Core (up to and including v0.6.1) references UXF types directly
+        // and does not compile without it, so Core hard-requires it here — selecting Core (or anything that
+        // needs Core) pulls UXF in as a locked-on dependency.
+        // REVISIT once a Core release ships with UXF absorbed into the package: from that version on, UXF
+        // must no longer be forced, or it installs a redundant package alongside the merged Core.
         private static readonly List<PackageDef> _ediaPackages = new List<PackageDef>
         {
-            new PackageDef("core", "EDIA Core", "com.edia.core", "edia_core"),
+            new PackageDef("uxf", "EDIA UXF", "com.edia.uxf", "edia_uxf"),
+            new PackageDef("core", "EDIA Core", "com.edia.core", "edia_core", requires: new[] { "uxf" }),
             new PackageDef("lsl", "EDIA LSL", "com.edia.lsl", "edia_lsl", requires: new[] { "core" }),
             new PackageDef("rcas", "EDIA Rcas", "com.edia.rcas", "edia_rcas", requires: new[] { "core" }),
             new PackageDef("survey", "EDIA Survey", "com.edia.survey", "edia_survey", requires: new[] { "core" }),
@@ -143,6 +151,22 @@ namespace Edia.Installer
             EditorGUILayout.EndHorizontal();
         }
 
+        /// <summary>The samples the EDIA rig relies on, as (owning package, sample name) pairs. Single source of
+        /// truth for Step 2's checklist, its import run and the Step 3 gate, so a sample can't be checked in one
+        /// place but forgotten in another.</summary>
+        private static readonly (string Package, string Sample, string FriendlyLabel)[] RequiredSamples =
+        {
+            (PackageNameXrHands, XrHandsSampleHandVisualizer,   "XR Hands Hand Visualizer"),
+            (PackageNameXri,     XriSampleStarterAssets,        "XRI Starter Assets"),
+            (PackageNameXri,     XriSampleXrDeviceSimulator,    "XRI XR Device Simulator"),
+            (PackageNameXri,     XriSampleHandsInteractionDemo, "XRI Hands Interaction Demo"),
+        };
+
+        private static bool AllRequiredSamplesImported()
+        {
+            return RequiredSamples.All(s => IsSampleInstalled(s.Package, s.Sample));
+        }
+
         /// <summary>Logs a one-off "step complete" line to the Console once a pending async step (XR packages or
         /// required samples) has finished — i.e. once its items report as installed/imported after the import and
         /// any domain reload. The pending flag lives in SessionState so it survives that reload.</summary>
@@ -155,10 +179,7 @@ namespace Edia.Installer
                 SessionState.SetBool(PendingXrKey, false);
             }
 
-            if (SessionState.GetBool(PendingSamplesKey, false) &&
-                IsSampleInstalled(PackageNameXri, XriSampleStarterAssets) &&
-                IsSampleInstalled(PackageNameXri, XriSampleHandsInteractionDemo) &&
-                IsSampleInstalled(PackageNameXrHands, XrHandsSampleHandVisualizer))
+            if (SessionState.GetBool(PendingSamplesKey, false) && AllRequiredSamplesImported())
             {
                 Debug.Log("[EDIA Installer] Step 2 complete: required samples imported.");
                 SessionState.SetBool(PendingSamplesKey, false);
@@ -213,6 +234,7 @@ namespace Edia.Installer
             }
         }
 
+        [System.Serializable]
         private struct PackageToInstall
         {
             public string PackageName;
@@ -229,6 +251,81 @@ namespace Edia.Installer
 
         private static Queue<PackageToInstall> _installQueue = new Queue<PackageToInstall>();
         private static PackageToInstall _currentPackage;
+
+#region Install state across domain reloads
+
+        // Installing a package triggers a domain reload, which wipes every static field — including the
+        // queue and the in-flight request. Without persistence a multi-module install silently stops after
+        // the first package. The queue is therefore mirrored into SessionState (which survives the reload)
+        // and picked up again by ResumeAfterReload below.
+        private const string KeyInstalling = "EdiaInstaller.Installing";
+        private const string KeyQueueJson  = "EdiaInstaller.QueueJson";
+
+        [System.Serializable]
+        private class InstallState
+        {
+            public List<PackageToInstall> Queue = new List<PackageToInstall>();
+            public PackageToInstall Current;
+        }
+
+        private static void SaveState()
+        {
+            var state = new InstallState
+            {
+                Queue   = _installQueue.ToList(),
+                Current = _currentPackage
+            };
+
+            SessionState.SetBool(KeyInstalling, _isInstallingEdia);
+            SessionState.SetString(KeyQueueJson, JsonUtility.ToJson(state));
+        }
+
+        private static void ClearState()
+        {
+            SessionState.EraseBool(KeyInstalling);
+            SessionState.EraseString(KeyQueueJson);
+        }
+
+        [InitializeOnLoadMethod]
+        private static void ResumeAfterReload()
+        {
+            if (!SessionState.GetBool(KeyInstalling, false))
+                return;
+
+            var json = SessionState.GetString(KeyQueueJson, "");
+            if (string.IsNullOrEmpty(json))
+                return;
+
+            var state = JsonUtility.FromJson<InstallState>(json);
+            if (state == null)
+            {
+                ClearState();
+                return;
+            }
+
+            _installQueue     = new Queue<PackageToInstall>(state.Queue);
+            _currentPackage   = state.Current;
+            _isInstallingEdia = true;
+
+            // The AddRequest that caused this reload is gone, so PackageProgress cannot be reattached;
+            // the package it was installing is already applied. Continue with the next queue item on the
+            // first editor tick, once the reload has fully settled.
+            EditorApplication.update -= OnResumeTick;
+            EditorApplication.update += OnResumeTick;
+        }
+
+        private static void OnResumeTick()
+        {
+            EditorApplication.update -= OnResumeTick;
+
+            if (!_isInstallingEdia)
+                return;
+
+            StartNextInstall();
+            GetWindowIfOpen()?.Repaint();
+        }
+
+#endregion
 
         [MenuItem("EDIA/Installer")]
         public static void ShowWindow()
@@ -294,20 +391,19 @@ namespace Edia.Installer
         {
             bool xrReady = IsPackageInstalled(PackageNameXri) && IsPackageInstalled(PackageNameXrHands);
 
-            bool starterAssets = IsSampleInstalled(PackageNameXri, XriSampleStarterAssets);
-            bool handsDemo      = IsSampleInstalled(PackageNameXri, XriSampleHandsInteractionDemo);
-            bool handVisualizer = IsSampleInstalled(PackageNameXrHands, XrHandsSampleHandVisualizer);
-            bool samplesDone    = starterAssets && handsDemo && handVisualizer;
+            bool samplesDone = AllRequiredSamplesImported();
 
             DrawIntro("The XR rig reuses assets that ship as samples with those packages — the Starter Assets " +
-                      "locomotion/teleport setup and the Hand Visualizer meshes. Without them the rig has broken references.");
+                      "locomotion/teleport setup, the XR Device Simulator used by the sample scenes, and the " +
+                      "Hand Visualizer meshes. Without them the rig has broken references.");
 
             if (!xrReady)
                 DrawIntro("Install the XR dependencies in Step 1 first — these samples ship with those packages.");
 
-            DrawStatusRow("Starter Assets", starterAssets);
-            DrawStatusRow("Hands Interaction Demo", handsDemo);
-            DrawStatusRow("Hand Visualizer", handVisualizer);
+            DrawStatusRow("Starter Assets", IsSampleInstalled(PackageNameXri, XriSampleStarterAssets));
+            DrawStatusRow("Hands Interaction Demo", IsSampleInstalled(PackageNameXri, XriSampleHandsInteractionDemo));
+            DrawStatusRow("XR Device Simulator", IsSampleInstalled(PackageNameXri, XriSampleXrDeviceSimulator));
+            DrawStatusRow("Hand Visualizer", IsSampleInstalled(PackageNameXrHands, XrHandsSampleHandVisualizer));
 
             EditorGUILayout.Space();
 
@@ -389,31 +485,13 @@ namespace Edia.Installer
 
 
         private void InstallSamples() {
-            bool allAlreadyImported =
-                IsSampleInstalled(PackageNameXri, XriSampleStarterAssets) &&
-                IsSampleInstalled(PackageNameXri, XriSampleHandsInteractionDemo) &&
-                IsSampleInstalled(PackageNameXrHands, XrHandsSampleHandVisualizer);
+            bool allAlreadyImported = AllRequiredSamplesImported();
 
-            TryImportSampleByName(
-                PackageNameXrHands,
-                XrHandsSampleHandVisualizer,
-                "XR Hands Hand Visualizer"
-            );
-
-            TryImportSampleByName(
-                PackageNameXri,
-                XriSampleStarterAssets,
-                "XRI Starter Assets"
-            );
-
-            TryImportSampleByName(
-                PackageNameXri,
-                XriSampleHandsInteractionDemo,
-                "XRI Hands Interaction Demo"
-            );
+            foreach (var (package, sample, label) in RequiredSamples)
+                TryImportSampleByName(package, sample, label);
 
             if (!allAlreadyImported)
-                SessionState.SetBool(PendingSamplesKey, true); // log completion once all three report imported
+                SessionState.SetBool(PendingSamplesKey, true); // log completion once all report imported
         }
 
         // ----- STEP 3: EDIA PACKAGES -----
@@ -424,9 +502,7 @@ namespace Edia.Installer
             GUIContent installedIconMsg = EditorGUIUtility.IconContent("TestPassed");
 
             bool xrReady = IsPackageInstalled(PackageNameXri) && IsPackageInstalled(PackageNameXrHands);
-            bool samplesReady = IsSampleInstalled(PackageNameXri, XriSampleStarterAssets)
-                             && IsSampleInstalled(PackageNameXri, XriSampleHandsInteractionDemo)
-                             && IsSampleInstalled(PackageNameXrHands, XrHandsSampleHandVisualizer);
+            bool samplesReady = AllRequiredSamplesImported();
 
             DrawIntro("Pick the EDIA modules to install. Selecting a headset eye-tracking module " +
                       "(PICO/Quest/Varjo/Vive) also selects EDIA Eye and EDIA Core automatically.");
@@ -517,6 +593,7 @@ namespace Edia.Installer
             {
                 Debug.LogError("[EDIA Installer] Failed to list packages: " + _listRequest.Error);
                 _isInstallingEdia = false;
+                ClearState();
                 _statusMessage = "Failed to list packages. See Console.";
                 GetWindowIfOpen()?.Repaint();
                 return;
@@ -543,6 +620,7 @@ namespace Edia.Installer
             {
                 _statusMessage = "All selected EDIA packages are already installed.";
                 _isInstallingEdia = false;
+                ClearState();
                 GetWindowIfOpen()?.Repaint();
                 return;
             }
@@ -557,6 +635,7 @@ namespace Edia.Installer
             {
                 _statusMessage = "All EDIA installations completed.";
                 _isInstallingEdia = false;
+                ClearState();
                 Debug.Log("[EDIA Installer] Step 3 complete: selected EDIA packages installed.");
                 GetWindowIfOpen()?.Repaint();
                 return;
@@ -569,6 +648,9 @@ namespace Edia.Installer
 
             try
             {
+                // Persist before the request: installing triggers a domain reload that wipes the statics.
+                SaveState();
+
                 _addRequest = Client.Add(_currentPackage.GitUrl);
                 EditorApplication.update += PackageProgress;
             }
@@ -577,6 +659,7 @@ namespace Edia.Installer
                 Debug.LogError("[EDIA Installer] Exception while starting install:\n" + ex);
                 _statusMessage = "Error starting install. See Console.";
                 _isInstallingEdia = false;
+                ClearState();
             }
 
             GetWindowIfOpen()?.Repaint();
@@ -587,7 +670,16 @@ namespace Edia.Installer
             if (_addRequest == null)
             {
                 EditorApplication.update -= PackageProgress;
+
+                // A domain reload can drop the in-flight request; if work remains, carry on with it.
+                if (_isInstallingEdia && _installQueue.Count > 0)
+                {
+                    StartNextInstall();
+                    return;
+                }
+
                 _isInstallingEdia = false;
+                ClearState();
                 _statusMessage = "No active request.";
                 GetWindowIfOpen()?.Repaint();
                 return;
