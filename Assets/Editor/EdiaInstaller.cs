@@ -612,16 +612,44 @@ namespace Edia.Installer
         // button per item, which is both safer and traceable for the researcher.
         private void DrawProjectValidationSection()
         {
-            DrawIntro("Finally, open Unity's Project Validation and apply the remaining fixes. These are " +
-                      "project settings rather than missing packages — for example enabling OpenXR as the XR " +
-                      "provider and the interaction profiles for your headset — so they depend on the hardware " +
-                      "you target. The installer leaves them to you rather than guessing.");
+            DrawIntro("Two manual steps remain. Both change project settings rather than adding missing files, " +
+                      "so the installer deliberately leaves them to you — but they are easy to miss, and EDIA " +
+                      "does not work correctly without them.");
+
+            EditorGUILayout.Space(2);
+
+            GUILayout.Label("1. Project Validation", EditorStyles.boldLabel);
+            DrawIntro("Apply the remaining fixes Unity reports — most importantly enabling OpenXR as the XR " +
+                      "provider, plus the interaction profiles for your headset. Which ones you need depends on " +
+                      "the hardware you target, so use the per-item Fix buttons.");
 
             if (GUILayout.Button("Open Project Validation", GUILayout.Height(26)))
             {
                 // Lives under XR Plug-in Management; present once Step 1 installed XR Management.
                 SettingsService.OpenProjectSettings("Project/XR Plug-in Management/Project Validation");
             }
+
+            EditorGUILayout.Space(6);
+
+            GUILayout.Label("2. EDIA Configurator — create the EDIA layers", EditorStyles.boldLabel);
+            DrawIntro("Press \"Setup layers\" in the Configurator. EDIA's rig and UI rely on its own layers " +
+                      "(e.g. the message-panel layer); without them the panels and interactors behave " +
+                      "incorrectly. This is not automated on purpose: writing layers could overwrite layers your " +
+                      "project already uses, so you stay in control of that.");
+
+            // Opened via the menu item so the installer keeps no compile-time dependency on edia_core;
+            // the Configurator only exists once Step 3 has installed Core.
+            EditorGUI.BeginDisabledGroup(!IsPackageInstalled("com.edia.core"));
+            if (GUILayout.Button("Open EDIA Configurator", GUILayout.Height(26)))
+            {
+                if (!EditorApplication.ExecuteMenuItem("EDIA/Configurator"))
+                    Debug.LogWarning("[EDIA Installer] Could not open the EDIA Configurator. " +
+                                     "Open it manually via the EDIA > Configurator menu.");
+            }
+            EditorGUI.EndDisabledGroup();
+
+            if (!IsPackageInstalled("com.edia.core"))
+                DrawIntro("Install EDIA Core in Step 3 first — the Configurator ships with it.");
         }
 
         // Entry point when EDIA button is pressed
