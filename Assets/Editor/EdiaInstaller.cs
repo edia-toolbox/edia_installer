@@ -346,9 +346,10 @@ namespace Edia.Installer
 #endregion
 
         /// <summary>
-        /// Guard for the one-time auto-open, stored per project in ProjectSettings/EditorUserSettings.asset.
+        /// Guard for the one-time auto-open, stored per project in UserSettings/EditorUserSettings.asset.
         /// Deliberately not EditorPrefs: that lives in the user's registry and is shared by every project on
         /// the machine, so the window would auto-open in the first project only and never again.
+        /// To make a project forget it opened once, delete that asset with the editor closed.
         /// </summary>
         private const string KeyAutoShown = "Edia.Installer.AutoShown";
 
