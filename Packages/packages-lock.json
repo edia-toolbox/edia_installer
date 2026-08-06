@@ -1,27 +1,5 @@
 {
   "dependencies": {
-    "com.edia.core": {
-      "version": "https://github.com/edia-toolbox/edia_core.git?path=/Assets/com.edia.core#main",
-      "depth": 0,
-      "source": "git",
-      "dependencies": {
-        "com.unity.inputsystem": "1.13.1",
-        "com.unity.xr.interaction.toolkit": "3.0.8",
-        "com.unity.xr.management": "4.5.1",
-        "com.unity.xr.hands": "1.5.1",
-        "com.unity.render-pipelines.universal": "17.0.4",
-        "com.unity.nuget.newtonsoft-json": "3.2.1",
-        "com.unity.textmeshpro": "3.0.8"
-      },
-      "hash": "b16d0588fabf8c47a6d9241866a8624cc76c3f94"
-    },
-    "com.edia.uxf": {
-      "version": "https://github.com/edia-toolbox/edia_uxf.git?path=/Assets/com.edia.uxf#main",
-      "depth": 0,
-      "source": "git",
-      "dependencies": {},
-      "hash": "81e2534a6cc329272b1a2f1c2c872c1aa97f0768"
-    },
     "com.unity.ai.navigation": {
       "version": "2.0.9",
       "depth": 0,
@@ -116,13 +94,6 @@
       "dependencies": {},
       "url": "https://packages.unity.com"
     },
-    "com.unity.nuget.newtonsoft-json": {
-      "version": "3.2.1",
-      "depth": 1,
-      "source": "registry",
-      "dependencies": {},
-      "url": "https://packages.unity.com"
-    },
     "com.unity.render-pipelines.core": {
       "version": "17.0.4",
       "depth": 1,
@@ -201,14 +172,6 @@
         "com.unity.modules.jsonserialize": "1.0.0"
       },
       "url": "https://packages.unity.com"
-    },
-    "com.unity.textmeshpro": {
-      "version": "5.0.0",
-      "depth": 1,
-      "source": "builtin",
-      "dependencies": {
-        "com.unity.ugui": "2.0.0"
-      }
     },
     "com.unity.timeline": {
       "version": "1.8.9",
