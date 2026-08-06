@@ -345,6 +345,30 @@ namespace Edia.Installer
 
 #endregion
 
+        /// <summary>
+        /// Guard for the one-time auto-open, stored per project in ProjectSettings/EditorUserSettings.asset.
+        /// Deliberately not EditorPrefs: that lives in the user's registry and is shared by every project on
+        /// the machine, so the window would auto-open in the first project only and never again.
+        /// </summary>
+        private const string KeyAutoShown = "Edia.Installer.AutoShown";
+
+        [InitializeOnLoadMethod]
+        private static void ShowOnFirstImport()
+        {
+            EditorApplication.delayCall += () =>
+            {
+                if (Application.isBatchMode) return;
+
+                // Mid-install the editor reloads repeatedly; the queue reopens the window itself when needed.
+                if (SessionState.GetBool(KeyInstalling, false)) return;
+
+                if (!string.IsNullOrEmpty(EditorUserSettings.GetConfigValue(KeyAutoShown))) return;
+
+                EditorUserSettings.SetConfigValue(KeyAutoShown, "1");
+                ShowWindow();
+            };
+        }
+
         [MenuItem("EDIA/Installer")]
         public static void ShowWindow()
         {
