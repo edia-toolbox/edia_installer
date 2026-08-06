@@ -14,6 +14,25 @@ namespace Edia.Installer
         // Unity XR packages
         private const string PackageNameXri = "com.unity.xr.interaction.toolkit";
         private const string PackageNameXrHands = "com.unity.xr.hands";
+        private const string PackageNameXrManagement = "com.unity.xr.management";
+        private const string PackageNameOpenXr = "com.unity.xr.openxr";
+
+        /// <summary>The Unity XR packages the EDIA rig needs, as (package id, display name) pairs. XR Management
+        /// plus a provider plug-in (OpenXR) are what actually drive a headset — the Interaction Toolkit only
+        /// provides the interaction layer on top. Without a provider, Project Validation reports the project as
+        /// not XR-ready and no headset is picked up.</summary>
+        private static readonly (string Package, string DisplayName)[] XrPackages =
+        {
+            (PackageNameXri,          "XR Interaction Toolkit"),
+            (PackageNameXrHands,      "XR Hands"),
+            (PackageNameXrManagement, "XR Plugin Management"),
+            (PackageNameOpenXr,       "OpenXR Plugin"),
+        };
+
+        private static bool AllXrPackagesInstalled()
+        {
+            return XrPackages.All(p => IsPackageInstalled(p.Package));
+        }
 
         // XR samples
         private const string XriSampleStarterAssets = "Starter Assets";
@@ -172,16 +191,15 @@ namespace Edia.Installer
         /// any domain reload. The pending flag lives in SessionState so it survives that reload.</summary>
         private void CheckStepCompletion()
         {
-            if (SessionState.GetBool(PendingXrKey, false) &&
-                IsPackageInstalled(PackageNameXri) && IsPackageInstalled(PackageNameXrHands))
+            if (SessionState.GetBool(PendingXrKey, false) && AllXrPackagesInstalled())
             {
-                Debug.Log("[EDIA Installer] Step 1 complete: XR Interaction Toolkit and XR Hands are installed.");
+                Debug.Log("[EDIA Installer] Step 1 complete: XR packages are installed.");
                 SessionState.SetBool(PendingXrKey, false);
             }
 
-            if (SessionState.GetBool(PendingSamplesKey, false) && AllRequiredSamplesImported())
+            if (SessionState.GetBool(PendingSamplesKey, false) && AllRequiredSamplesImported() && AreTmpEssentialsImported())
             {
-                Debug.Log("[EDIA Installer] Step 2 complete: required samples imported.");
+                Debug.Log("[EDIA Installer] Step 2 complete: required samples and TextMeshPro essentials imported.");
                 SessionState.SetBool(PendingSamplesKey, false);
             }
         }
@@ -354,6 +372,10 @@ namespace Edia.Installer
             DrawStepHeader(3, "EDIA Packages");
             DrawEdiaSection();
 
+            // -------- STEP 4: Project Validation --------
+            DrawStepHeader(4, "Project Validation");
+            DrawProjectValidationSection();
+
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("", GUI.skin.horizontalSlider); // separator line
             EditorGUILayout.LabelField("Status:", EditorStyles.boldLabel);
@@ -365,15 +387,14 @@ namespace Edia.Installer
         // ----- STEP 1: XR DEPENDENCIES -----
         private void DrawXrDependenciesSection()
         {
-            bool xriInstalled = IsPackageInstalled(PackageNameXri);
-            bool xrHandsInstalled = IsPackageInstalled(PackageNameXrHands);
-            bool xrDone = xriInstalled && xrHandsInstalled;
+            bool xrDone = AllXrPackagesInstalled();
 
-            DrawIntro("EDIA's XR rig is built on Unity's XR Interaction Toolkit and XR Hands. " +
-                      "Both packages must be present before the rig or any EDIA module works.");
+            DrawIntro("EDIA's XR rig is built on Unity's XR Interaction Toolkit and XR Hands, driven by XR Plugin " +
+                      "Management and the OpenXR provider. All four must be present before the rig or any EDIA " +
+                      "module works.");
 
-            DrawStatusRow("XR Interaction Toolkit", xriInstalled);
-            DrawStatusRow("XR Hands", xrHandsInstalled);
+            foreach (var (package, displayName) in XrPackages)
+                DrawStatusRow(displayName, IsPackageInstalled(package));
 
             EditorGUILayout.Space();
 
@@ -389,13 +410,14 @@ namespace Edia.Installer
         // ----- STEP 2: REQUIRED SAMPLES -----
         private void DrawSamplesSection()
         {
-            bool xrReady = IsPackageInstalled(PackageNameXri) && IsPackageInstalled(PackageNameXrHands);
+            bool xrReady = AllXrPackagesInstalled();
 
-            bool samplesDone = AllRequiredSamplesImported();
+            bool samplesDone = AllRequiredSamplesImported() && AreTmpEssentialsImported();
 
             DrawIntro("The XR rig reuses assets that ship as samples with those packages — the Starter Assets " +
                       "locomotion/teleport setup, the XR Device Simulator used by the sample scenes, and the " +
-                      "Hand Visualizer meshes. Without them the rig has broken references.");
+                      "Hand Visualizer meshes. Without them the rig has broken references. EDIA's UI also needs " +
+                      "TextMeshPro's essential resources, which Unity ships as a separate one-time import.");
 
             if (!xrReady)
                 DrawIntro("Install the XR dependencies in Step 1 first — these samples ship with those packages.");
@@ -404,10 +426,11 @@ namespace Edia.Installer
             DrawStatusRow("Hands Interaction Demo", IsSampleInstalled(PackageNameXri, XriSampleHandsInteractionDemo));
             DrawStatusRow("XR Device Simulator", IsSampleInstalled(PackageNameXri, XriSampleXrDeviceSimulator));
             DrawStatusRow("Hand Visualizer", IsSampleInstalled(PackageNameXrHands, XrHandsSampleHandVisualizer));
+            DrawStatusRow("TextMeshPro Essentials", AreTmpEssentialsImported());
 
             EditorGUILayout.Space();
 
-            // Nothing left to import once all three samples are present.
+            // Nothing left to import once all samples and the TMP essentials are present.
             EditorGUI.BeginDisabledGroup(_isInstallingEdia || !xrReady || samplesDone);
             if (GUILayout.Button("Install", GUILayout.Height(26)))
             {
@@ -456,42 +479,86 @@ namespace Edia.Installer
 
         private void InstallXrPackages()
         {
-            bool needXri = !IsPackageInstalled(PackageNameXri);
-            bool needHands = !IsPackageInstalled(PackageNameXrHands);
+            var missing = XrPackages.Where(p => !IsPackageInstalled(p.Package)).ToList();
 
-            if (!needXri && !needHands)
+            if (missing.Count == 0)
             {
                 _statusMessage = "XR packages are already installed.";
                 Repaint();
                 return;
             }
 
-            if (needXri)
+            foreach (var (package, displayName) in missing)
             {
-                Debug.Log("[EDIA Installer] Requesting install of XR Interaction Toolkit...");
-                Client.Add(PackageNameXri); // async; we don't track completion in code
+                Debug.Log($"[EDIA Installer] Requesting install of {displayName}...");
+                Client.Add(package); // async; we don't track completion in code
             }
 
-            if (needHands)
-            {
-                Debug.Log("[EDIA Installer] Requesting install of XR Hands...");
-                Client.Add(PackageNameXrHands);
-            }
-
-            SessionState.SetBool(PendingXrKey, true); // log completion once both report installed (after reload)
+            SessionState.SetBool(PendingXrKey, true); // log completion once all report installed (after reload)
             _statusMessage = "Requested XR packages via Package Manager. Unity may reload while importing.";
             Repaint();
         }
 
 
         private void InstallSamples() {
-            bool allAlreadyImported = AllRequiredSamplesImported();
+            bool allAlreadyImported = AllRequiredSamplesImported() && AreTmpEssentialsImported();
 
             foreach (var (package, sample, label) in RequiredSamples)
                 TryImportSampleByName(package, sample, label);
 
+            TryImportTmpEssentials();
+
             if (!allAlreadyImported)
                 SessionState.SetBool(PendingSamplesKey, true); // log completion once all report imported
+        }
+
+        // TextMeshPro's essential resources (its settings asset, shaders and default font) ship inside the
+        // TMP/uGUI package as a .unitypackage and must be imported once per project. Until that happens, any
+        // TMP text component throws "ArgumentNullException: ... Parameter name: shader" on validate, which is
+        // what EDIA's UI prefabs run into. Importing them is a missing dependency, not a project preference,
+        // so the installer handles it here.
+        private const string TmpSettingsAssetPath = "Assets/TextMesh Pro/Resources/TMP Settings.asset";
+
+        private static bool AreTmpEssentialsImported()
+        {
+            return !string.IsNullOrEmpty(AssetDatabase.AssetPathToGUID(TmpSettingsAssetPath));
+        }
+
+        /// <summary>Runs TMP's own "Import TMP Essential Resources" routine. Resolved by reflection because the
+        /// installer must compile in any project, including one where the TMP/uGUI package is absent — a compile
+        /// error here would take the whole installer down instead of just this one step.</summary>
+        private static void TryImportTmpEssentials()
+        {
+            if (AreTmpEssentialsImported())
+            {
+                Debug.Log("[EDIA Installer] TextMeshPro essential resources already imported.");
+                return;
+            }
+
+            var importerType = System.AppDomain.CurrentDomain.GetAssemblies()
+                .Select(a => a.GetType("TMPro.TMP_PackageResourceImporter"))
+                .FirstOrDefault(t => t != null);
+
+            var importMethod = importerType?.GetMethod(
+                "ImportResources",
+                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+
+            if (importMethod == null)
+            {
+                Debug.LogWarning("[EDIA Installer] Could not import the TextMeshPro essential resources automatically. " +
+                                 "Import them manually via Window > TextMeshPro > Import TMP Essential Resources.");
+                return;
+            }
+
+            try
+            {
+                Debug.Log("[EDIA Installer] Importing TextMeshPro essential resources...");
+                importMethod.Invoke(null, new object[] { true, false, false }); // essentials, no examples, silent
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError("[EDIA Installer] Failed to import the TextMeshPro essential resources:\n" + ex);
+            }
         }
 
         // ----- STEP 3: EDIA PACKAGES -----
@@ -501,7 +568,7 @@ namespace Edia.Installer
             warnIconMsg.text = "Not Installed";
             GUIContent installedIconMsg = EditorGUIUtility.IconContent("TestPassed");
 
-            bool xrReady = IsPackageInstalled(PackageNameXri) && IsPackageInstalled(PackageNameXrHands);
+            bool xrReady = AllXrPackagesInstalled();
             bool samplesReady = AllRequiredSamplesImported();
 
             DrawIntro("Pick the EDIA modules to install. Selecting a headset eye-tracking module " +
@@ -535,6 +602,26 @@ namespace Edia.Installer
             }
 
             EditorGUI.EndDisabledGroup();
+        }
+
+        // ----- STEP 4: PROJECT VALIDATION -----
+        // Everything above installs packages and assets: things that are simply missing. What remains is
+        // project *settings* — which XR provider to enable, target-platform and rendering options — and those
+        // are project- and headset-specific choices (a Quest study needs different settings than a Vive one).
+        // The installer deliberately does not write them; Unity's own Project Validation lists them with a Fix
+        // button per item, which is both safer and traceable for the researcher.
+        private void DrawProjectValidationSection()
+        {
+            DrawIntro("Finally, open Unity's Project Validation and apply the remaining fixes. These are " +
+                      "project settings rather than missing packages — for example enabling OpenXR as the XR " +
+                      "provider and the interaction profiles for your headset — so they depend on the hardware " +
+                      "you target. The installer leaves them to you rather than guessing.");
+
+            if (GUILayout.Button("Open Project Validation", GUILayout.Height(26)))
+            {
+                // Lives under XR Plug-in Management; present once Step 1 installed XR Management.
+                SettingsService.OpenProjectSettings("Project/XR Plug-in Management/Project Validation");
+            }
         }
 
         // Entry point when EDIA button is pressed
