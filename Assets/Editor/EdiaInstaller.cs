@@ -41,10 +41,10 @@ namespace Edia.Installer
         private const string XrHandsSampleHandVisualizer = "HandVisualizer";
 
         /// <summary>
-        /// Describes one installable EDIA module. The <see cref="Requires"/> keys must refer
-        /// to modules listed earlier in <see cref="_ediaPackages"/>, so a single forward pass
-        /// over that list is enough both to propagate "required" toggles and to install in
-        /// dependency order.
+        /// Describes one installable EDIA module. The <see cref="Requires"/> keys refer to other
+        /// entries in <see cref="_ediaPackages"/>, in any direction: that list is ordered for
+        /// reading, not for resolving. Selection is propagated to a fixpoint and the install queue
+        /// is ordered by walking requirements first, so neither depends on the listed order.
         /// </summary>
         private class PackageDef
         {
@@ -72,8 +72,10 @@ namespace Edia.Installer
             public string GitUrl => $"https://github.com/edia-toolbox/{RepoName}.git?path=/Assets/{PackageName}#{Version}";
         }
 
-        // All EDIA modules currently shipped from this workspace, in dependency order
-        // (a module's Requires always point to entries earlier in this list).
+        // All EDIA modules currently shipped from this workspace, in the order they are listed in the window.
+        // That order is chosen for the reader — Core first, because it is what people come for — and carries
+        // no meaning for dependency resolution or install order; see PropagateRequirements and
+        // SelectedInInstallOrder, both of which follow Requires rather than this list's order.
         //
         // EDIA UXF: every published EDIA Core (up to and including v0.6.1) references UXF types directly
         // and does not compile without it, so Core hard-requires it here — selecting Core (or anything that
@@ -82,8 +84,8 @@ namespace Edia.Installer
         // must no longer be forced, or it installs a redundant package alongside the merged Core.
         private static readonly List<PackageDef> _ediaPackages = new List<PackageDef>
         {
-            new PackageDef("uxf", "EDIA UXF", "com.edia.uxf", "edia_uxf"),
             new PackageDef("core", "EDIA Core", "com.edia.core", "edia_core", requires: new[] { "uxf" }),
+            new PackageDef("uxf", "EDIA UXF", "com.edia.uxf", "edia_uxf"),
             new PackageDef("lsl", "EDIA LSL", "com.edia.lsl", "edia_lsl", requires: new[] { "core" }),
             new PackageDef("rcas", "EDIA Rcas", "com.edia.rcas", "edia_rcas", requires: new[] { "core" }),
             new PackageDef("survey", "EDIA Survey", "com.edia.survey", "edia_survey", requires: new[] { "core" }),
@@ -238,18 +240,58 @@ namespace Edia.Installer
         }
 
         // Turns on the toggle of every module required (directly or transitively) by a selected module.
-        // A single forward pass suffices because Requires only ever points earlier in the list.
+        // Repeats until nothing changes, so a requirement listed after the module needing it is still picked
+        // up: ticking a headset module selects EDIA Eye, which selects Core, which selects UXF, all in one call.
         private static void PropagateRequirements()
         {
-            foreach (var pkg in _ediaPackages)
+            bool changed = true;
+            while (changed)
             {
-                if (!pkg.Install) continue;
-                foreach (var reqKey in pkg.Requires)
+                changed = false;
+                foreach (var pkg in _ediaPackages)
                 {
-                    var required = _ediaPackages.First(p => p.Key == reqKey);
-                    required.Install = true;
+                    if (!pkg.Install) continue;
+                    foreach (var reqKey in pkg.Requires)
+                    {
+                        var required = _ediaPackages.FirstOrDefault(p => p.Key == reqKey);
+                        if (required == null || required.Install) continue;
+
+                        required.Install = true;
+                        changed = true;
+                    }
                 }
             }
+        }
+
+        // The selected modules, ordered so every module comes after the ones it requires. The window's list
+        // order cannot be used for this: it is arranged for reading (Core above UXF, which Core depends on).
+        private static List<PackageDef> SelectedInInstallOrder()
+        {
+            var ordered = new List<PackageDef>();
+            var visited = new HashSet<string>();
+
+            foreach (var pkg in _ediaPackages)
+            {
+                if (pkg.Install)
+                    AddAfterRequirements(pkg, ordered, visited);
+            }
+
+            return ordered;
+        }
+
+        private static void AddAfterRequirements(PackageDef pkg, List<PackageDef> ordered, HashSet<string> visited)
+        {
+            if (!visited.Add(pkg.Key))
+                return;
+
+            foreach (var reqKey in pkg.Requires)
+            {
+                var required = _ediaPackages.FirstOrDefault(p => p.Key == reqKey);
+                if (required != null)
+                    AddAfterRequirements(required, ordered, visited);
+            }
+
+            ordered.Add(pkg);
         }
 
         [System.Serializable]
@@ -377,6 +419,13 @@ namespace Edia.Installer
             window.minSize = new Vector2(560, 300);
         }
 
+        // Packages and samples can also change while the window sits in the background (Package Manager, a
+        // colleague's commit, a manual sample import), so returning to it re-probes rather than trusting the cache.
+        private void OnFocus()
+        {
+            InvalidateStateCache();
+        }
+
         private void OnGUI()
         {
             CheckStepCompletion();
@@ -464,35 +513,65 @@ namespace Edia.Installer
             EditorGUI.EndDisabledGroup();
         }
 
-        private static bool IsPackageInstalled(string packageName)
+        // ----- INSTALLED-STATE CACHE -----
+        // Every status row asks whether a package or sample is present, and OnGUI runs on each repaint (twice
+        // per event: once to lay out, once to draw). Probing directly from those rows meant roughly 40
+        // PackageInfo.FindForAssetPath calls and 12 Sample.FindByPackage calls per repaint, each building a
+        // fresh managed object graph — FindByPackage also re-reads the package's manifest. Simply moving the
+        // mouse over the window allocated gigabytes per second and kept the garbage collector saturated.
+        // The answers only change when something is installed, so they are probed at most once per interval
+        // and reused by every row in between.
+        private const double StateCacheSeconds = 1.0;
+
+        private static double _stateCacheStamp = double.NegativeInfinity;
+        private static readonly Dictionary<string, string> _packageVersions = new Dictionary<string, string>();
+        private static readonly Dictionary<string, bool> _samplesImported = new Dictionary<string, bool>();
+        private static bool _tmpEssentialsImported;
+
+        /// <summary>Forces the next query to probe again. Call after anything that installs or imports, so the
+        /// window does not keep reporting the state from before that action.</summary>
+        private static void InvalidateStateCache()
         {
-            // Uses PackageInfo to check synchronously if the package exists
-            var info = UnityEditor.PackageManager.PackageInfo.FindForAssetPath("Packages/" + packageName);
-            return info != null;
+            _stateCacheStamp = double.NegativeInfinity;
         }
 
-        private static bool IsPackageInstalled(string packageName, out string version)
+        private static void RefreshStateCacheIfStale()
         {
-            // Uses PackageInfo to check synchronously if the package exists
-            var info = UnityEditor.PackageManager.PackageInfo.FindForAssetPath("Packages/" + packageName);
-            if (info != null) {
-                version = info.version;
-                return true;
-            }
-            version = null;
-            return false;
+            if (EditorApplication.timeSinceStartup - _stateCacheStamp < StateCacheSeconds)
+                return;
+
+            _stateCacheStamp = EditorApplication.timeSinceStartup;
+
+            _packageVersions.Clear();
+            foreach (var (package, _) in XrPackages)
+                _packageVersions[package] = ProbePackageVersion(package);
+            foreach (var pkg in _ediaPackages)
+                _packageVersions[pkg.PackageName] = ProbePackageVersion(pkg.PackageName);
+
+            _samplesImported.Clear();
+            foreach (var (package, sample, _) in RequiredSamples)
+                _samplesImported[package + "/" + sample] = ProbeSampleImported(package, sample);
+
+            _tmpEssentialsImported = ProbeTmpEssentials();
         }
 
-        private static bool IsSampleInstalled(string packageName, string sampleName) {
-            if (!IsPackageInstalled(packageName)) return false;
+        // The uncached probes. Everything drawn goes through the cache above; only the cache refresh and the
+        // install actions (which must not act on a stale answer) call these directly.
+        private static string ProbePackageVersion(string packageName)
+        {
+            var info = UnityEditor.PackageManager.PackageInfo.FindForAssetPath("Packages/" + packageName);
+            return info?.version;
+        }
+
+        private static bool ProbeSampleImported(string packageName, string sampleName)
+        {
+            if (ProbePackageVersion(packageName) == null) return false;
 
             var samples = Sample.FindByPackage(packageName, null); // use current installed version
+            if (samples == null) return false;
 
-            if (samples == null || !samples.Any()) {
-                return false;
-            }
-
-            foreach (var sample in samples) {
+            foreach (var sample in samples)
+            {
                 if (!sample.displayName.Contains(sampleName))
                     continue;
 
@@ -501,9 +580,43 @@ namespace Edia.Installer
             return false;
         }
 
+        private static bool IsPackageInstalled(string packageName)
+        {
+            return IsPackageInstalled(packageName, out _);
+        }
+
+        private static bool IsPackageInstalled(string packageName, out string version)
+        {
+            RefreshStateCacheIfStale();
+
+            // Not every caller asks about a listed module (Step 4 checks Core by name), so fall back to a probe.
+            if (!_packageVersions.TryGetValue(packageName, out version))
+            {
+                version = ProbePackageVersion(packageName);
+                _packageVersions[packageName] = version;
+            }
+
+            return version != null;
+        }
+
+        private static bool IsSampleInstalled(string packageName, string sampleName)
+        {
+            RefreshStateCacheIfStale();
+
+            string key = packageName + "/" + sampleName;
+            if (!_samplesImported.TryGetValue(key, out bool imported))
+            {
+                imported = ProbeSampleImported(packageName, sampleName);
+                _samplesImported[key] = imported;
+            }
+
+            return imported;
+        }
+
 
         private void InstallXrPackages()
         {
+            InvalidateStateCache(); // act on what is installed now, not on what the rows last showed
             var missing = XrPackages.Where(p => !IsPackageInstalled(p.Package)).ToList();
 
             if (missing.Count == 0)
@@ -526,12 +639,14 @@ namespace Edia.Installer
 
 
         private void InstallSamples() {
+            InvalidateStateCache(); // act on what is imported now, not on what the rows last showed
             bool allAlreadyImported = AllRequiredSamplesImported() && AreTmpEssentialsImported();
 
             foreach (var (package, sample, label) in RequiredSamples)
                 TryImportSampleByName(package, sample, label);
 
             TryImportTmpEssentials();
+            InvalidateStateCache(); // the rows must pick the imports up, not wait out the cache interval
 
             if (!allAlreadyImported)
                 SessionState.SetBool(PendingSamplesKey, true); // log completion once all report imported
@@ -544,9 +659,15 @@ namespace Edia.Installer
         // so the installer handles it here.
         private const string TmpSettingsAssetPath = "Assets/TextMesh Pro/Resources/TMP Settings.asset";
 
-        private static bool AreTmpEssentialsImported()
+        private static bool ProbeTmpEssentials()
         {
             return !string.IsNullOrEmpty(AssetDatabase.AssetPathToGUID(TmpSettingsAssetPath));
+        }
+
+        private static bool AreTmpEssentialsImported()
+        {
+            RefreshStateCacheIfStale();
+            return _tmpEssentialsImported;
         }
 
         /// <summary>Runs TMP's own "Import TMP Essential Resources" routine. Resolved by reflection because the
@@ -687,16 +808,13 @@ namespace Edia.Installer
                 return;
             }
 
-            // Modules are selected in dependency order already (see _ediaPackages), so the
-            // queue built from them installs dependencies before the modules that need them.
             PropagateRequirements();
 
             _installQueue.Clear();
 
-            foreach (var pkg in _ediaPackages)
+            // Queued dependencies-first, not in window order, so a module never installs before what it needs.
+            foreach (var pkg in SelectedInInstallOrder())
             {
-                if (!pkg.Install) continue;
-
                 _installQueue.Enqueue(new PackageToInstall(
                     pkg.PackageName,
                     pkg.GitUrl,
@@ -842,6 +960,7 @@ namespace Edia.Installer
             }
 
             _addRequest = null;
+            InvalidateStateCache(); // a module just appeared (or did not); re-probe before drawing its row again
 
             // Continue with next in queue, if any
             StartNextInstall();
