@@ -473,10 +473,10 @@ namespace Edia.Installer
             EditorGUILayout.Space();
 
             // Nothing left to install once both packages are present.
-            EditorGUI.BeginDisabledGroup(_isInstallingEdia || xrDone);
+            EditorGUI.BeginDisabledGroup(_isInstallingEdia || _actionQueued || xrDone);
             if (GUILayout.Button("Install", GUILayout.Height(26)))
             {
-                InstallXrPackages();
+                RunAfterThisGuiPass(InstallXrPackages);
             }
             EditorGUI.EndDisabledGroup();
         }
@@ -505,12 +505,38 @@ namespace Edia.Installer
             EditorGUILayout.Space();
 
             // Nothing left to import once all samples and the TMP essentials are present.
-            EditorGUI.BeginDisabledGroup(_isInstallingEdia || !xrReady || samplesDone);
+            EditorGUI.BeginDisabledGroup(_isInstallingEdia || _actionQueued || !xrReady || samplesDone);
             if (GUILayout.Button("Install", GUILayout.Height(26)))
             {
-                InstallSamples();
+                RunAfterThisGuiPass(InstallSamples);
             }
             EditorGUI.EndDisabledGroup();
+        }
+
+        // Importing samples or installing packages must not happen inside OnGUI. Importing a sample forces a
+        // synchronous domain reload from within the GUI pass; when the editor comes back it processes the same
+        // event again, the button fires a second time, and the import starts over. That loop re-imported the XR
+        // samples dozens of times, recompiled the scripts each round, and drove the editor from 3 GB to 17 GB of
+        // memory while the whole UI crawled. Queuing the work makes it run once, after the pass has finished.
+        private static bool _actionQueued;
+
+        private static void RunAfterThisGuiPass(System.Action action)
+        {
+            if (_actionQueued) return; // a second click while the first is still queued must not start it twice
+
+            _actionQueued = true;
+            EditorApplication.delayCall += () =>
+            {
+                try
+                {
+                    action();
+                }
+                finally
+                {
+                    _actionQueued = false;
+                    GetWindowIfOpen()?.Repaint();
+                }
+            };
         }
 
         // ----- INSTALLED-STATE CACHE -----
@@ -729,7 +755,7 @@ namespace Edia.Installer
                 DrawIntro("Import the required samples in Step 2 first — the EDIA rig references them, and " +
                           "installing modules without the samples leaves broken references.");
 
-            EditorGUI.BeginDisabledGroup(_isInstallingEdia || !xrReady || !samplesReady);
+            EditorGUI.BeginDisabledGroup(_isInstallingEdia || _actionQueued || !xrReady || !samplesReady);
 
             // Selecting a module auto-selects the modules it requires (e.g. any eye-tracking
             // headset module pulls in "EDIA Eye", which in turn pulls in "EDIA Core").
@@ -744,7 +770,7 @@ namespace Edia.Installer
 
             if (GUILayout.Button("Install", GUILayout.Height(26)))
             {
-                StartEdiaInstalls();
+                RunAfterThisGuiPass(StartEdiaInstalls);
             }
 
             EditorGUI.EndDisabledGroup();
@@ -774,6 +800,10 @@ namespace Edia.Installer
                 // Lives under XR Plug-in Management; present once Step 1 installed XR Management.
                 SettingsService.OpenProjectSettings("Project/XR Plug-in Management/Project Validation");
             }
+
+            DrawIntro("Close the Project Settings window once you are done here. Unity re-runs every validation " +
+                      "rule each time that window repaints, which keeps the editor busy and grows its memory by " +
+                      "gigabytes while it stays open — it is not EDIA doing that, but it will make your editor crawl.");
 
             EditorGUILayout.Space(6);
 
