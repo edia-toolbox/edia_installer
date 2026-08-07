@@ -395,21 +395,41 @@ namespace Edia.Installer
         /// </summary>
         private const string KeyAutoShown = "Edia.Installer.AutoShown";
 
-        [InitializeOnLoadMethod]
-        private static void ShowOnFirstImport()
+        /// <summary>Set when this script is imported, so importing the unitypackage opens the window even in a
+        /// project that has already seen it once. Lives in SessionState because the import is followed by a
+        /// domain reload, and the window can only be opened on the other side of it.</summary>
+        private const string KeyAutoOpenPending = "EdiaInstaller.AutoOpenPending";
+
+        internal static void RequestAutoOpen()
         {
-            EditorApplication.delayCall += () =>
-            {
-                if (Application.isBatchMode) return;
+            SessionState.SetBool(KeyAutoOpenPending, true);
 
-                // Mid-install the editor reloads repeatedly; the queue reopens the window itself when needed.
-                if (SessionState.GetBool(KeyInstalling, false)) return;
+            // If the import does not trigger a reload (script unchanged), no InitializeOnLoadMethod will run,
+            // so open from here too. Whichever fires first clears the flag; the other one then does nothing.
+            EditorApplication.delayCall += TryAutoOpen;
+        }
 
-                if (!string.IsNullOrEmpty(EditorUserSettings.GetConfigValue(KeyAutoShown))) return;
+        [InitializeOnLoadMethod]
+        private static void ScheduleAutoOpen()
+        {
+            EditorApplication.delayCall += TryAutoOpen;
+        }
 
-                EditorUserSettings.SetConfigValue(KeyAutoShown, "1");
-                ShowWindow();
-            };
+        private static void TryAutoOpen()
+        {
+            if (Application.isBatchMode) return;
+
+            // Mid-install the editor reloads repeatedly; the queue reopens the window itself when needed.
+            if (SessionState.GetBool(KeyInstalling, false)) return;
+
+            bool justImported = SessionState.GetBool(KeyAutoOpenPending, false);
+            if (justImported)
+                SessionState.EraseBool(KeyAutoOpenPending);
+            else if (!string.IsNullOrEmpty(EditorUserSettings.GetConfigValue(KeyAutoShown)))
+                return; // already shown once in this project, and this load is not an import
+
+            EditorUserSettings.SetConfigValue(KeyAutoShown, "1");
+            ShowWindow();
         }
 
         [MenuItem("EDIA/Installer")]
@@ -1038,6 +1058,30 @@ namespace Edia.Installer
         private static EdiaInstaller GetWindowIfOpen()
         {
             return Resources.FindObjectsOfTypeAll<EdiaInstaller>().FirstOrDefault();
+        }
+    }
+
+    /// <summary>
+    /// Opens the installer when this script is imported — which is exactly what importing the unitypackage does.
+    /// The per-project guard alone was not enough: it fires on the first load in a project and never again, so
+    /// importing the installer into a project that had already seen it once (a test project being reset, a
+    /// project where someone removed and re-added it) silently opened nothing.
+    /// </summary>
+    internal sealed class EdiaInstallerImportWatcher : AssetPostprocessor
+    {
+        private const string ScriptFileName = "EdiaInstaller.cs";
+
+        private static void OnPostprocessAllAssets(string[] importedAssets, string[] deletedAssets,
+                                                   string[] movedAssets, string[] movedFromAssetPaths)
+        {
+            foreach (var path in importedAssets)
+            {
+                if (!path.EndsWith(ScriptFileName, System.StringComparison.Ordinal))
+                    continue;
+
+                EdiaInstaller.RequestAutoOpen();
+                return;
+            }
         }
     }
 }
