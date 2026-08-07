@@ -873,14 +873,35 @@ namespace Edia.Installer
                 .Select(a => a.GetType("UnityEngine.XR.Interaction.Toolkit.InteractionLayerSettings"))
                 .FirstOrDefault(t => t != null);
 
-            var instance = settingsType
-                ?.GetProperty("Instance", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
-                ?.GetValue(null);
+            if (settingsType == null)
+                return; // XRI not installed; Step 1 gates Step 2, so this only happens if that gate is bypassed
 
-            if (instance == null)
-                return; // XRI not installed (or its API moved); Step 1 gates Step 2, so this is the second case
+            // FlattenHierarchy because Instance is a static member of the generic base (ScriptableSettings<T>),
+            // and NonPublic because the type and its layer accessors are internal to XRI. Getting either flag
+            // wrong makes every lookup below return null and this method do nothing at all — which is exactly
+            // what happened on the first attempt, silently, so a failed lookup now says so.
+            const System.Reflection.BindingFlags StaticFlags = System.Reflection.BindingFlags.Public
+                | System.Reflection.BindingFlags.NonPublic
+                | System.Reflection.BindingFlags.Static
+                | System.Reflection.BindingFlags.FlattenHierarchy;
+            const System.Reflection.BindingFlags InstanceFlags = System.Reflection.BindingFlags.Public
+                | System.Reflection.BindingFlags.NonPublic
+                | System.Reflection.BindingFlags.Instance;
 
-            string current = settingsType.GetMethod("GetLayerNameAt")?.Invoke(instance, new object[] { TeleportInteractionLayer }) as string;
+            var instance = settingsType.GetProperty("Instance", StaticFlags)?.GetValue(null);
+            var getLayerName = settingsType.GetMethod("GetLayerNameAt", InstanceFlags);
+            var setLayerName = settingsType.GetMethod("SetLayerNameAt", InstanceFlags);
+
+            if (instance == null || getLayerName == null || setLayerName == null)
+            {
+                Debug.LogWarning($"[EDIA Installer] Could not reach XRI's interaction layer settings, so layer " +
+                                 $"{TeleportInteractionLayer} was not named \"{TeleportInteractionLayerName}\". " +
+                                 "XRI's Starter Assets sample will report it in Project Validation; use its Fix " +
+                                 "button there.");
+                return;
+            }
+
+            string current = getLayerName.Invoke(instance, new object[] { TeleportInteractionLayer }) as string;
 
             if (string.Equals(current, TeleportInteractionLayerName, System.StringComparison.OrdinalIgnoreCase))
                 return;
@@ -894,7 +915,10 @@ namespace Edia.Installer
                 return;
             }
 
-            settingsType.GetMethod("SetLayerNameAt")?.Invoke(instance, new object[] { TeleportInteractionLayer, TeleportInteractionLayerName });
+            setLayerName.Invoke(instance, new object[] { TeleportInteractionLayer, TeleportInteractionLayerName });
+            EditorUtility.SetDirty((Object)instance);
+            AssetDatabase.SaveAssets(); // the settings asset must be on disk before the samples' rules read it
+
             Debug.Log($"[EDIA Installer] Reserved interaction layer {TeleportInteractionLayer} as " +
                       $"\"{TeleportInteractionLayerName}\", which XRI's teleportation locomotion expects.");
         }
