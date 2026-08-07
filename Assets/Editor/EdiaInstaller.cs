@@ -510,11 +510,8 @@ namespace Edia.Installer
         {
             bool xrDone = AllXrPackagesInstalled();
 
-            DrawIntro("EDIA's XR rig is built on Unity's XR Interaction Toolkit and XR Hands, with XR Plugin " +
-                      "Management as the place a project selects its headset provider. All three must be present " +
-                      "before the rig or any EDIA module works. The provider itself is not installed here — that " +
-                      "choice depends on your headset (Quest via OpenXR, Vive via SRanipal, Varjo via its own " +
-                      "plug-in), so you enable it yourself in Project Settings > XR Plug-in Management.");
+            DrawIntro("The EDIA rig needs these three. Your headset's provider is not installed here — enable it " +
+                      "yourself in Project Settings > XR Plug-in Management.");
 
             foreach (var (package, displayName) in XrPackages)
                 DrawStatusRow(displayName, IsPackageInstalled(package));
@@ -537,11 +534,8 @@ namespace Edia.Installer
 
             bool samplesDone = AllRequiredSamplesImported() && AreTmpEssentialsImported();
 
-            DrawIntro("EDIA's UI needs TextMeshPro's essential resources, which Unity ships as a separate one-time " +
-                      "import, and the XR rig reuses assets that come as samples with the Step 1 packages — the " +
-                      "Starter Assets locomotion/teleport setup, the XR Device Simulator used by the sample " +
-                      "scenes, and the Hand Visualizer meshes. Without them the rig has broken references. They " +
-                      "are imported in the order listed below, which is why TextMeshPro comes first.");
+            DrawIntro("The rig reuses assets from these samples and EDIA's UI needs TextMeshPro's resources; " +
+                      "without them the rig has broken references. Imported in the order listed.");
 
             if (!xrReady)
                 DrawInfoNote("Install the XR dependencies in Step 1 first — these samples ship with those packages.");
