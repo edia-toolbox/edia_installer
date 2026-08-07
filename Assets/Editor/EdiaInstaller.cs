@@ -125,8 +125,44 @@ namespace Edia.Installer
         private static readonly Color StepAccent = new Color(0.30f, 0.57f, 0.93f);
         private GUIStyle _stepTitleStyle;
         private GUIStyle _stepBadgeStyle;
-        private GUIStyle _introStyle;
+        private GUIStyle _panelStyle;
+        private GUIStyle _noteStyle;
+        private GUIStyle _rowLabelStyle;
         private Vector2  _scroll;
+
+        /// <summary>
+        /// Builds the shared text styles once. Once, and not per call: OnGUI runs on every repaint, and a
+        /// GUIStyle allocated there is garbage generated dozens of times a second for the lifetime of the window.
+        ///
+        /// The panel mirrors the EDIA Configurator's boxed text — same recessed background, centered, one point
+        /// larger than default — so the two windows look like parts of the same toolbox. Everything comes from
+        /// GUI.skin and EditorStyles; no font or texture asset is involved, which keeps this a single script.
+        /// </summary>
+        private void EnsureTextStyles()
+        {
+            if (_panelStyle != null) return;
+
+            _panelStyle = new GUIStyle(GUI.skin.box)
+            {
+                wordWrap = true,
+                fontSize = 12,
+                alignment = TextAnchor.MiddleCenter,
+                stretchWidth = true,
+                padding = new RectOffset(10, 10, 8, 8),
+            };
+            _panelStyle.normal.textColor = EditorStyles.label.normal.textColor;
+
+            // Left-aligned inside the same panel: an info line sits next to its icon, so centring it would
+            // leave the text drifting away from the icon as the window is resized.
+            _noteStyle = new GUIStyle(_panelStyle)
+            {
+                alignment = TextAnchor.MiddleLeft,
+                padding = new RectOffset(0, 0, 0, 0),
+            };
+            _noteStyle.normal.background = null;
+
+            _rowLabelStyle = new GUIStyle(EditorStyles.label) { fontSize = 12 };
+        }
 
         /// <summary>Draws a prominent "STEP N — Title" header with a numbered accent badge, so the three
         /// installation stages read as clearly separate steps.</summary>
@@ -154,25 +190,30 @@ namespace Edia.Installer
             EditorGUILayout.Space(4);
         }
 
-        /// <summary>Plain wrapped description under a step title — no icon, reads like the other body text.</summary>
+        /// <summary>
+        /// Explanatory text on the recessed panel the EDIA Configurator uses for the same purpose, so the two
+        /// windows read as one tool. Built from GUI.skin.box and EditorStyles only — no icon or font assets —
+        /// because the installer has to stay a single script someone can drop into a project.
+        /// </summary>
         private void DrawIntro(string text)
         {
-            _introStyle ??= new GUIStyle(EditorStyles.wordWrappedLabel);
-            GUILayout.Label(text, _introStyle);
+            EnsureTextStyles();
+            GUILayout.Label(text, _panelStyle);
             EditorGUILayout.Space(2);
         }
 
-        /// <summary>A hint that only appears when a step is blocked on an earlier one ("do X first"), marked
-        /// with Unity's info icon so it reads as a condition to act on rather than as more body text.</summary>
+        /// <summary>A hint that only appears when a step is blocked on an earlier one ("do X first"), on the
+        /// same panel as the other text but marked with Unity's info icon so it reads as a condition to act on
+        /// rather than as more description.</summary>
         private void DrawInfoNote(string text)
         {
-            _introStyle ??= new GUIStyle(EditorStyles.wordWrappedLabel);
+            EnsureTextStyles();
 
-            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.BeginHorizontal(_panelStyle);
             // Shared built-in content: hand it to the label as-is, never mutate it.
             GUILayout.Label(EditorGUIUtility.IconContent("console.infoicon"),
                             GUILayout.Width(IconHeight + 4f), GUILayout.Height(IconHeight + 4f));
-            GUILayout.Label(text, _introStyle);
+            GUILayout.Label(text, _noteStyle);
             EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.Space(2);
@@ -183,8 +224,10 @@ namespace Edia.Installer
         /// with the module toggles in Step 3.</summary>
         private void DrawStatusRow(string label, bool done)
         {
+            EnsureTextStyles();
+
             EditorGUILayout.BeginHorizontal();
-            GUILayout.Label(label, GUILayout.Width(NameWidth));
+            GUILayout.Label(label, _rowLabelStyle, GUILayout.Width(NameWidth));
             using (new EditorGUI.DisabledScope(true))
                 GUILayout.Toggle(done, GUIContent.none, GUILayout.Width(ToggleWidth));
             GUILayout.FlexibleSpace();
