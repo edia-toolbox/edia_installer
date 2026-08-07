@@ -159,6 +159,22 @@ namespace Edia.Installer
             EditorGUILayout.Space(2);
         }
 
+        /// <summary>A hint that only appears when a step is blocked on an earlier one ("do X first"), marked
+        /// with Unity's info icon so it reads as a condition to act on rather than as more body text.</summary>
+        private void DrawInfoNote(string text)
+        {
+            _introStyle ??= new GUIStyle(EditorStyles.wordWrappedLabel);
+
+            EditorGUILayout.BeginHorizontal();
+            // Shared built-in content: hand it to the label as-is, never mutate it.
+            GUILayout.Label(EditorGUIUtility.IconContent("console.infoicon"),
+                            GUILayout.Width(IconHeight + 4f), GUILayout.Height(IconHeight + 4f));
+            GUILayout.Label(text, _introStyle);
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.Space(2);
+        }
+
         /// <summary>A checklist row: item name in the shared name column, then a read-only checkbox that ticks
         /// once the item is installed/imported. Used by Steps 1 and 2 so their checkboxes line up vertically
         /// with the module toggles in Step 3.</summary>
@@ -470,6 +486,10 @@ namespace Edia.Installer
             DrawStepHeader(4, "Project Validation");
             DrawProjectValidationSection();
 
+            // -------- STEP 5: EDIA Configurator --------
+            DrawStepHeader(5, "EDIA Configurator");
+            DrawConfiguratorSection();
+
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("", GUI.skin.horizontalSlider); // separator line
             EditorGUILayout.LabelField("Status:", EditorStyles.boldLabel);
@@ -514,7 +534,7 @@ namespace Edia.Installer
                       "TextMeshPro's essential resources, which Unity ships as a separate one-time import.");
 
             if (!xrReady)
-                DrawIntro("Install the XR dependencies in Step 1 first — these samples ship with those packages.");
+                DrawInfoNote("Install the XR dependencies in Step 1 first — these samples ship with those packages.");
 
             DrawStatusRow("Starter Assets", IsSampleInstalled(PackageNameXri, XriSampleStarterAssets));
             DrawStatusRow("Hands Interaction Demo", IsSampleInstalled(PackageNameXri, XriSampleHandsInteractionDemo));
@@ -770,10 +790,10 @@ namespace Edia.Installer
             // meshes). Installing modules before those samples exist reproduces the "missing Samples" breakage
             // (dangling teleport refs, hand-mesh NRE), so Step 3 is gated on both XR packages AND samples.
             if (!xrReady)
-                DrawIntro("Install the XR dependencies in Step 1 first.");
+                DrawInfoNote("Install the XR dependencies in Step 1 first.");
             else if (!samplesReady)
-                DrawIntro("Import the required samples in Step 2 first — the EDIA rig references them, and " +
-                          "installing modules without the samples leaves broken references.");
+                DrawInfoNote("Import the required samples in Step 2 first — the EDIA rig references them, and " +
+                             "installing modules without the samples leaves broken references.");
 
             EditorGUI.BeginDisabledGroup(_isInstallingEdia || _actionQueued || !xrReady || !samplesReady);
 
@@ -804,15 +824,8 @@ namespace Edia.Installer
         // button per item, which is both safer and traceable for the researcher.
         private void DrawProjectValidationSection()
         {
-            DrawIntro("Two manual steps remain. Both change project settings rather than adding missing files, " +
-                      "so the installer deliberately leaves them to you — but they are easy to miss, and EDIA " +
-                      "does not work correctly without them.");
-
-            EditorGUILayout.Space(2);
-
-            GUILayout.Label("1. Project Validation", EditorStyles.boldLabel);
-            DrawIntro("Apply the remaining fixes Unity reports — most importantly enabling OpenXR as the XR " +
-                      "provider, plus the interaction profiles for your headset. Which ones you need depends on " +
+            DrawIntro("Apply the remaining fixes Unity reports. " +
+                      "Plus the interaction profiles for your headset. Which ones you need depends on " +
                       "the hardware you target, so use the per-item Fix buttons.");
 
             if (GUILayout.Button("Open Project Validation", GUILayout.Height(26)))
@@ -820,10 +833,13 @@ namespace Edia.Installer
                 // Lives under XR Plug-in Management; present once Step 1 installed XR Management.
                 SettingsService.OpenProjectSettings("Project/XR Plug-in Management/Project Validation");
             }
+        }
 
-            EditorGUILayout.Space(6);
-
-            GUILayout.Label("2. EDIA Configurator — create the EDIA layers", EditorStyles.boldLabel);
+        // ----- STEP 5: EDIA CONFIGURATOR -----
+        // Its own step rather than a second half of Step 4: creating the layers is a separate action, in a
+        // different window, and one that is easy to skip past when it hangs off the bottom of another step.
+        private void DrawConfiguratorSection()
+        {
             DrawIntro("Press \"Setup layers\" in the Configurator. EDIA's rig and UI rely on its own layers " +
                       "(e.g. the message-panel layer); without them the panels and interactors behave " +
                       "incorrectly. This is not automated on purpose: writing layers could overwrite layers your " +
@@ -841,7 +857,7 @@ namespace Edia.Installer
             EditorGUI.EndDisabledGroup();
 
             if (!IsPackageInstalled("com.edia.core"))
-                DrawIntro("Install EDIA Core in Step 3 first — the Configurator ships with it.");
+                DrawInfoNote("Install EDIA Core in Step 3 first — the Configurator ships with it.");
         }
 
         // Entry point when EDIA button is pressed
