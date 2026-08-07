@@ -23,7 +23,8 @@ namespace Edia.Installer
         /// through OpenXR, Vive eye tracking needs HTC's SRanipal runtime, Varjo ships its own XR plug-in.
         /// Installing OpenXR here would impose one of those on everyone, and — since enabling a loader is a
         /// project setting the installer does not write — it would sit there doing nothing except adding failing
-        /// Project Validation rules. Choosing and enabling the provider belongs in Step 4.</summary>
+        /// Project Validation rules. Choosing and enabling a provider is left to the researcher, who knows
+        /// which headset the study runs on.</summary>
         private static readonly (string Package, string DisplayName)[] XrPackages =
         {
             (PackageNameXri,          "XR Interaction Toolkit"),
@@ -492,12 +493,8 @@ namespace Edia.Installer
             DrawStepHeader(3, "EDIA Packages");
             DrawEdiaSection();
 
-            // -------- STEP 4: Project Validation --------
-            DrawStepHeader(4, "Project Validation");
-            DrawProjectValidationSection();
-
-            // -------- STEP 5: EDIA Configurator --------
-            DrawStepHeader(5, "EDIA Configurator");
+            // -------- STEP 4: EDIA Configurator --------
+            DrawStepHeader(4, "EDIA Configurator");
             DrawConfiguratorSection();
 
             EditorGUILayout.Space();
@@ -517,7 +514,7 @@ namespace Edia.Installer
                       "Management as the place a project selects its headset provider. All three must be present " +
                       "before the rig or any EDIA module works. The provider itself is not installed here — that " +
                       "choice depends on your headset (Quest via OpenXR, Vive via SRanipal, Varjo via its own " +
-                      "plug-in) and belongs in Step 4.");
+                      "plug-in), so you enable it yourself in Project Settings > XR Plug-in Management.");
 
             foreach (var (package, displayName) in XrPackages)
                 DrawStatusRow(displayName, IsPackageInstalled(package));
@@ -675,7 +672,7 @@ namespace Edia.Installer
         {
             RefreshStateCacheIfStale();
 
-            // Not every caller asks about a listed module (Step 4 checks Core by name), so fall back to a probe.
+            // Not every caller asks about a listed module (the Configurator step checks Core by name), so probe.
             if (!_packageVersions.TryGetValue(packageName, out version))
             {
                 version = ProbePackageVersion(packageName);
@@ -1038,33 +1035,15 @@ namespace Edia.Installer
             EditorGUI.EndDisabledGroup();
         }
 
-        // ----- STEP 4: PROJECT VALIDATION -----
-        // Everything above installs packages and assets: things that are simply missing. What remains is
-        // project *settings* — which XR provider to enable, target-platform and rendering options — and those
-        // are project- and headset-specific choices (a Quest study needs different settings than a Vive one).
-        // The installer deliberately does not write them; Unity's own Project Validation lists them with a Fix
-        // button per item, which is both safer and traceable for the researcher.
-        private void DrawProjectValidationSection()
-        {
-            DrawIntro("Enable the plug-in provider for your headset here, and apply the remaining fixes Unity " +
-                      "reports. Which provider and which interaction profiles you need depends on the hardware " +
-                      "you target — Quest through OpenXR, Vive through HTC's own runtime, Varjo through its " +
-                      "plug-in — so the installer leaves that choice to you and Unity's per-item Fix buttons.");
-
-            if (GUILayout.Button("Open Project Validation", GUILayout.Height(26)))
-            {
-                // Lives under XR Plug-in Management; present once Step 1 installed XR Management.
-                SettingsService.OpenProjectSettings("Project/XR Plug-in Management/Project Validation");
-            }
-
-            DrawInfoNote("Fix the items and then leave the page. While rules are still failing, Unity re-evaluates " +
-                         "them on every repaint of that page, which drives the editor's memory up by gigabytes and " +
-                         "makes it crawl. Once everything passes, the page costs nothing. Measured, and it is " +
-                         "Unity's own window — but it is the reason a half-finished setup feels broken.");
-        }
-
-        // ----- STEP 5: EDIA CONFIGURATOR -----
-        // Its own step rather than a second half of Step 4: creating the layers is a separate action, in a
+        // ----- STEP 4: EDIA CONFIGURATOR -----
+        // There is deliberately no Project Validation step. What remains after Step 3 is project *settings* —
+        // which XR provider to enable, which interaction profiles, target-platform and rendering options — and
+        // those are headset-specific choices a Quest study answers differently from a Vive one. Sending everyone
+        // to Unity's validation page made that worse rather than better: it lists items that do not apply to
+        // their hardware, and while any rule is failing that page re-evaluates all of them on every repaint,
+        // which is expensive enough to make the editor crawl. Researchers configure their own headset from here.
+        //
+        // Its own step rather than a second half of another one: creating the layers is a separate action, in a
         // different window, and one that is easy to skip past when it hangs off the bottom of another step.
         private void DrawConfiguratorSection()
         {

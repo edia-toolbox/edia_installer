@@ -21,13 +21,14 @@ Alternatively, clone this repo -> open **"EDIA > Installer"** from the main menu
 
 ## How it works
 
-The window walks through five steps. The first three install what is missing and are each gated on the previous one; the last two are settings you apply yourself, because they are project-specific and overwriting them blindly would be worse than asking.
+The window walks through four steps. The first three install what is missing and are each gated on the previous one; the last one opens a tool where you press one button, because writing those settings for you could overwrite what your project already has.
 
 1. **XR Dependencies** — installs Unity's XR Interaction Toolkit and XR Hands, plus XR Plugin Management. No provider plug-in is installed: which one is right depends on your headset (Quest through OpenXR, Vive eye tracking through HTC's SRanipal runtime, Varjo through its own plug-in), so that choice is left to you in Step 4.
 2. **Required Samples** — imports TextMeshPro's essential resources first, then the samples the EDIA rig reuses: XR Hands' *Hand Visualizer*, XRI *Starter Assets*, *XR Device Simulator* and *Hands Interaction Demo*. Without these the rig has broken references. The order is deliberate — the samples reference TMP, and *Hands Interaction Demo* checks that the other two are already present — and Step 2 also names interaction layer 31 `Teleport` if it is free, which XRI's Starter Assets sample expects.
 3. **EDIA Packages** — tick the modules you want. Dependencies are selected automatically and shown locked.
-4. **Project Validation** — opens Unity's own Project Validation page, where the remaining project settings (target platform, rendering, the interaction profiles for your headset) are listed with a Fix button each. Which ones you need depends on your hardware, so the installer does not write them for you.
-5. **EDIA Configurator** — opens the Configurator so you can press *Setup layers*. EDIA's rig and UI depend on their own layers; creating them is not automated because that could overwrite layers your project already uses.
+4. **EDIA Configurator** — opens the Configurator so you can press *Setup layers*. EDIA's rig and UI depend on their own layers; creating them is not automated because that could overwrite layers your project already uses.
+
+What the installer deliberately leaves to you: enabling the plug-in provider for your headset in *Project Settings > XR Plug-in Management*, and whatever headset-specific settings follow from it. A Quest study answers those differently from a Vive one, so pointing everyone at the same checklist would be misleading.
 
 Per module you can specify any git ref in the **branch** field: a branch name (`main`, `dev`) or a release tag (`v0.6.0`). It is passed to the Package Manager as-is.
 
