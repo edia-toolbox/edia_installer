@@ -540,19 +540,23 @@ namespace Edia.Installer
 
             bool samplesDone = AllRequiredSamplesImported() && AreTmpEssentialsImported();
 
-            DrawIntro("The XR rig reuses assets that ship as samples with those packages — the Starter Assets " +
-                      "locomotion/teleport setup, the XR Device Simulator used by the sample scenes, and the " +
-                      "Hand Visualizer meshes. Without them the rig has broken references. EDIA's UI also needs " +
-                      "TextMeshPro's essential resources, which Unity ships as a separate one-time import.");
+            DrawIntro("EDIA's UI needs TextMeshPro's essential resources, which Unity ships as a separate one-time " +
+                      "import, and the XR rig reuses assets that come as samples with the Step 1 packages — the " +
+                      "Starter Assets locomotion/teleport setup, the XR Device Simulator used by the sample " +
+                      "scenes, and the Hand Visualizer meshes. Without them the rig has broken references. They " +
+                      "are imported in the order listed below, which is why TextMeshPro comes first.");
 
             if (!xrReady)
                 DrawInfoNote("Install the XR dependencies in Step 1 first — these samples ship with those packages.");
 
-            DrawStatusRow("Starter Assets", IsSampleInstalled(PackageNameXri, XriSampleStarterAssets));
-            DrawStatusRow("Hands Interaction Demo", IsSampleInstalled(PackageNameXri, XriSampleHandsInteractionDemo));
-            DrawStatusRow("XR Device Simulator", IsSampleInstalled(PackageNameXri, XriSampleXrDeviceSimulator));
-            DrawStatusRow("Hand Visualizer", IsSampleInstalled(PackageNameXrHands, XrHandsSampleHandVisualizer));
+            // Listed in the order they are imported, TextMeshPro first: the samples reference TMP, so importing
+            // them before its essentials exist leaves broken references. Reading the checklist top to bottom
+            // should tell you what happens when you press Install.
             DrawStatusRow("TextMeshPro Essentials", AreTmpEssentialsImported());
+            DrawStatusRow("Hand Visualizer", IsSampleInstalled(PackageNameXrHands, XrHandsSampleHandVisualizer));
+            DrawStatusRow("Starter Assets", IsSampleInstalled(PackageNameXri, XriSampleStarterAssets));
+            DrawStatusRow("XR Device Simulator", IsSampleInstalled(PackageNameXri, XriSampleXrDeviceSimulator));
+            DrawStatusRow("Hands Interaction Demo", IsSampleInstalled(PackageNameXri, XriSampleHandsInteractionDemo));
 
             EditorGUILayout.Space();
 
