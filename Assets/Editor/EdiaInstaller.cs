@@ -833,6 +833,11 @@ namespace Edia.Installer
                 // Lives under XR Plug-in Management; present once Step 1 installed XR Management.
                 SettingsService.OpenProjectSettings("Project/XR Plug-in Management/Project Validation");
             }
+
+            DrawInfoNote("Fix the items and then leave the page. While rules are still failing, Unity re-evaluates " +
+                         "them on every repaint of that page, which drives the editor's memory up by gigabytes and " +
+                         "makes it crawl. Once everything passes, the page costs nothing. Measured, and it is " +
+                         "Unity's own window — but it is the reason a half-finished setup feels broken.");
         }
 
         // ----- STEP 5: EDIA CONFIGURATOR -----
