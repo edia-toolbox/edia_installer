@@ -906,7 +906,11 @@ namespace Edia.Installer
 
         private static bool ProbeTmpEssentials()
         {
-            return !string.IsNullOrEmpty(AssetDatabase.AssetPathToGUID(TmpSettingsAssetPath));
+            // Not AssetPathToGUID: that keeps returning a GUID for an asset that was just deleted (its default
+            // includes recently deleted assets), so a project where TMP was removed still reported the
+            // essentials as present and Step 2 ticked a box for something that was not there. Loading the asset
+            // answers the question that is actually being asked — is it in the project right now.
+            return AssetDatabase.LoadMainAssetAtPath(TmpSettingsAssetPath) != null;
         }
 
         private static bool AreTmpEssentialsImported()
