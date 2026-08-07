@@ -801,11 +801,6 @@ namespace Edia.Installer
                 SettingsService.OpenProjectSettings("Project/XR Plug-in Management/Project Validation");
             }
 
-            DrawIntro("When you are done, close Project Settings again — or at least switch to any other page in " +
-                      "it. Unity re-runs every validation rule each time the Project Validation page repaints, " +
-                      "which grows the editor's memory by gigabytes and makes it crawl for as long as that page " +
-                      "is visible. That is Unity's own window, not EDIA, and leaving the page is enough to stop it.");
-
             EditorGUILayout.Space(6);
 
             GUILayout.Label("2. EDIA Configurator — create the EDIA layers", EditorStyles.boldLabel);
