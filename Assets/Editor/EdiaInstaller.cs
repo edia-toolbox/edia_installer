@@ -1041,10 +1041,9 @@ namespace Edia.Installer
         // different window, and one that is easy to skip past when it hangs off the bottom of another step.
         private void DrawConfiguratorSection()
         {
-            DrawIntro("Press \"Setup layers\" in the Configurator. EDIA's rig and UI rely on its own layers " +
-                      "(e.g. the message-panel layer); without them the panels and interactors behave " +
-                      "incorrectly. This is not automated on purpose: writing layers could overwrite layers your " +
-                      "project already uses, so you stay in control of that.");
+            DrawIntro("Press \"Setup layers\" in the Configurator. EDIA's rig and UI need their own layers; " +
+                      "without them the panels and interactors misbehave. Not automated, because it could " +
+                      "overwrite layers your project already uses.");
 
             // Opened via the menu item so the installer keeps no compile-time dependency on edia_core;
             // the Configurator only exists once Step 3 has installed Core.
