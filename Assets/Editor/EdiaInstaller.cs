@@ -15,18 +15,20 @@ namespace Edia.Installer
         private const string PackageNameXri = "com.unity.xr.interaction.toolkit";
         private const string PackageNameXrHands = "com.unity.xr.hands";
         private const string PackageNameXrManagement = "com.unity.xr.management";
-        private const string PackageNameOpenXr = "com.unity.xr.openxr";
 
-        /// <summary>The Unity XR packages the EDIA rig needs, as (package id, display name) pairs. XR Management
-        /// plus a provider plug-in (OpenXR) are what actually drive a headset — the Interaction Toolkit only
-        /// provides the interaction layer on top. Without a provider, Project Validation reports the project as
-        /// not XR-ready and no headset is picked up.</summary>
+        /// <summary>The Unity XR packages the EDIA rig needs, as (package id, display name) pairs.
+        ///
+        /// Deliberately no provider plug-in. XR Plugin Management is the mechanism through which a project
+        /// selects one, but which provider is right depends on the headset and is not EDIA's call: Quest goes
+        /// through OpenXR, Vive eye tracking needs HTC's SRanipal runtime, Varjo ships its own XR plug-in.
+        /// Installing OpenXR here would impose one of those on everyone, and — since enabling a loader is a
+        /// project setting the installer does not write — it would sit there doing nothing except adding failing
+        /// Project Validation rules. Choosing and enabling the provider belongs in Step 4.</summary>
         private static readonly (string Package, string DisplayName)[] XrPackages =
         {
             (PackageNameXri,          "XR Interaction Toolkit"),
             (PackageNameXrHands,      "XR Hands"),
             (PackageNameXrManagement, "XR Plugin Management"),
-            (PackageNameOpenXr,       "OpenXR Plugin"),
         };
 
         private static bool AllXrPackagesInstalled()
@@ -190,7 +192,11 @@ namespace Edia.Installer
 
         /// <summary>The samples the EDIA rig relies on, as (owning package, sample name) pairs. Single source of
         /// truth for Step 2's checklist, its import run and the Step 3 gate, so a sample can't be checked in one
-        /// place but forgotten in another.</summary>
+        /// place but forgotten in another.
+        ///
+        /// The order matters and is not alphabetical: Hands Interaction Demo comes last because its own project
+        /// validation rules check that the Hand Visualizer and Starter Assets samples are already present. Import
+        /// it first and those rules fail, which makes the sample force Unity's Project Validation window open.</summary>
         private static readonly (string Package, string Sample, string FriendlyLabel)[] RequiredSamples =
         {
             (PackageNameXrHands, XrHandsSampleHandVisualizer,   "XR Hands Hand Visualizer"),
@@ -365,6 +371,10 @@ namespace Edia.Installer
         [InitializeOnLoadMethod]
         private static void ResumeAfterReload()
         {
+            // Step 2 uses the same survive-the-reload mechanism; re-arm it here rather than adding a second
+            // load hook. Does nothing unless a sample import is actually still pending.
+            ResumeSamplesAfterTmp();
+
             if (!SessionState.GetBool(KeyInstalling, false))
                 return;
 
@@ -503,9 +513,11 @@ namespace Edia.Installer
         {
             bool xrDone = AllXrPackagesInstalled();
 
-            DrawIntro("EDIA's XR rig is built on Unity's XR Interaction Toolkit and XR Hands, driven by XR Plugin " +
-                      "Management and the OpenXR provider. All four must be present before the rig or any EDIA " +
-                      "module works.");
+            DrawIntro("EDIA's XR rig is built on Unity's XR Interaction Toolkit and XR Hands, with XR Plugin " +
+                      "Management as the place a project selects its headset provider. All three must be present " +
+                      "before the rig or any EDIA module works. The provider itself is not installed here — that " +
+                      "choice depends on your headset (Quest via OpenXR, Vive via SRanipal, Varjo via its own " +
+                      "plug-in) and belongs in Step 4.");
 
             foreach (var (package, displayName) in XrPackages)
                 DrawStatusRow(displayName, IsPackageInstalled(package));
@@ -544,8 +556,12 @@ namespace Edia.Installer
 
             EditorGUILayout.Space();
 
-            // Nothing left to import once all samples and the TMP essentials are present.
-            EditorGUI.BeginDisabledGroup(_isInstallingEdia || _actionQueued || !xrReady || samplesDone);
+            // Nothing left to import once all samples and the TMP essentials are present. The button also stays
+            // disabled while the deferred sample import is still pending: that phase outlives the click that
+            // started it (and a domain reload), so _actionQueued no longer covers it.
+            bool sampleImportPending = SessionState.GetBool(KeySamplesAfterTmp, false);
+
+            EditorGUI.BeginDisabledGroup(_isInstallingEdia || _actionQueued || sampleImportPending || !xrReady || samplesDone);
             if (GUILayout.Button("Install", GUILayout.Height(26)))
             {
                 RunAfterThisGuiPass(InstallSamples);
@@ -704,19 +720,182 @@ namespace Edia.Installer
         }
 
 
+        // Step 2 runs in two phases, in this order: the TextMeshPro essential resources on their own, and the
+        // XR samples only once that import has settled. The samples reference TMP types and assets, so importing
+        // them while the essentials are still missing bakes broken references into exactly the prefabs the rig
+        // uses. Phase two cannot be the next statement here: TMP's import is an asset import followed by a
+        // compilation and domain reload, which wipes every static field — see ScheduleSampleImportAfterTmp.
         private void InstallSamples() {
             InvalidateStateCache(); // act on what is imported now, not on what the rows last showed
-            bool allAlreadyImported = AllRequiredSamplesImported() && AreTmpEssentialsImported();
+
+            if (AllRequiredSamplesImported() && AreTmpEssentialsImported())
+            {
+                _statusMessage = "Required samples and TextMeshPro essentials are already imported.";
+                Repaint();
+                return;
+            }
+
+            SessionState.SetBool(PendingSamplesKey, true); // log completion once all report imported
+
+            // Written before the import, not after: TMP's importer can take the domain down with it, and
+            // everything below the call would then never run. These flags are what carry phase two across —
+            // assume an import is coming, so a reload from inside the call still lands in the waiting state.
+            SessionState.SetBool(KeySamplesAfterTmp, true);
+            SessionState.SetBool(KeyAwaitTmpImport, true);
+
+            _statusMessage = "Importing TextMeshPro essential resources; the XR samples follow once it has settled.";
+            Repaint();
+
+            var outcome = TryImportTmpEssentials();
+            InvalidateStateCache(); // the TMP row must pick the import up, not wait out the cache interval
+
+            // Corrected once we know what happened: only a started import has an asset import and reload to
+            // wait for. AlreadyPresent and Unavailable never produce one — and both return without importing,
+            // so this line is always reached in those two cases — and phase two must not sit waiting for a
+            // reload that is not coming.
+            SessionState.SetBool(KeyAwaitTmpImport, outcome == TmpImportOutcome.Started);
+            ScheduleSampleImportAfterTmp();
+        }
+
+#region Step 2 phase two: the samples, after TMP has settled
+
+        // The intent to still import the samples is kept in SessionState — the same mechanism the EDIA install
+        // queue above uses — because it has to survive the domain reload that TMP's import triggers. Static
+        // fields do not.
+        private const string KeySamplesAfterTmp = "EdiaInstaller.SamplesAfterTmp";
+        private const string KeyAwaitTmpImport  = "EdiaInstaller.AwaitTmpImport";
+
+        // If TMP's resources never show up — a failed import, a TMP version that skips the request silently —
+        // the samples are imported anyway once this expires, rather than leaving Step 2 unfinished with no way
+        // out other than restarting the editor.
+        private const double TmpSettleTimeoutSeconds = 120.0;
+        private static double _tmpSettleDeadline;
+
+        private static void ScheduleSampleImportAfterTmp()
+        {
+            // A fresh deadline on every registration, including the one after a domain reload: the grace period
+            // should measure the wait for TMP, not the time the editor spent reloading.
+            _tmpSettleDeadline = EditorApplication.timeSinceStartup + TmpSettleTimeoutSeconds;
+
+            EditorApplication.update -= OnSamplesAfterTmpTick;
+            EditorApplication.update += OnSamplesAfterTmpTick;
+        }
+
+        /// <summary>Re-arms phase two after a domain reload. Called from <see cref="ResumeAfterReload"/>, which
+        /// runs on every load; without the flag set it does nothing.</summary>
+        private static void ResumeSamplesAfterTmp()
+        {
+            if (!SessionState.GetBool(KeySamplesAfterTmp, false))
+                return;
+
+            ScheduleSampleImportAfterTmp();
+        }
+
+        private static void OnSamplesAfterTmpTick()
+        {
+            if (!SessionState.GetBool(KeySamplesAfterTmp, false))
+            {
+                EditorApplication.update -= OnSamplesAfterTmpTick;
+                return;
+            }
+
+            // Let the asset database and the compiler finish first. Importing the samples while the project is
+            // still settling is what leaves their TMP references unresolved.
+            if (EditorApplication.isCompiling || EditorApplication.isUpdating)
+                return;
+
+            bool awaitingTmp = SessionState.GetBool(KeyAwaitTmpImport, false);
+            // The uncached probe: this runs per tick, and the cached one refreshes every package and sample.
+            bool tmpReady = ProbeTmpEssentials();
+
+            if (awaitingTmp && !tmpReady && EditorApplication.timeSinceStartup < _tmpSettleDeadline)
+                return;
+
+            EditorApplication.update -= OnSamplesAfterTmpTick;
+            SessionState.EraseBool(KeyAwaitTmpImport);
+
+            if (awaitingTmp && !tmpReady)
+                Debug.LogWarning("[EDIA Installer] The TextMeshPro essential resources did not appear in time. " +
+                                 "Importing the samples now; if their text is unstyled afterwards, import the " +
+                                 "essentials via Window > TextMeshPro > Import TMP Essential Resources and press " +
+                                 "Install again.");
+
+            InvalidateStateCache(); // decide on what the TMP import actually left behind
+            if (AllRequiredSamplesImported())
+            {
+                SessionState.EraseBool(KeySamplesAfterTmp);
+                GetWindowIfOpen()?.Repaint();
+                return;
+            }
+
+            _statusMessage = "Importing the required XR samples...";
+            ImportRequiredSamples();
+
+            // Reached only when the pass ran to completion. A sample import can take the domain down halfway,
+            // in which case the flag is still set and ResumeAfterReload re-arms the tick, which then imports
+            // whatever is left. Every pass imports at least one sample, so that terminates.
+            SessionState.EraseBool(KeySamplesAfterTmp);
+            _statusMessage = "Step 2 imports requested. Unity may reload while importing.";
+            GetWindowIfOpen()?.Repaint();
+        }
+
+        private static void ImportRequiredSamples()
+        {
+            // Before the samples, not after: their validation rules run on the domain load that follows the
+            // import, and a rule that fails there makes the sample force Unity's Project Validation window open.
+            TryReserveTeleportInteractionLayer();
 
             foreach (var (package, sample, label) in RequiredSamples)
                 TryImportSampleByName(package, sample, label);
 
-            TryImportTmpEssentials();
             InvalidateStateCache(); // the rows must pick the imports up, not wait out the cache interval
-
-            if (!allAlreadyImported)
-                SessionState.SetBool(PendingSamplesKey, true); // log completion once all report imported
         }
+
+        // XRI reserves interaction layer 31 for teleportation, and its Starter Assets sample treats any other
+        // name there as a validation issue. That matters more than it sounds: the sample opens Unity's Project
+        // Validation window by itself whenever one of its rules fails, on every domain load — and that page is
+        // ruinously expensive while rules are failing (it re-evaluates them on every repaint, which took the
+        // editor from 3 GB to 14 GB in twelve seconds here). Naming the layer up front keeps the sample quiet.
+        //
+        // Resolved by reflection so the installer still compiles in a project where XRI is absent, and the layer
+        // is only claimed when it is free: silently renaming a layer a project already uses would break whatever
+        // depends on it, which is the kind of thing an installer must never do behind someone's back.
+        private const int TeleportInteractionLayer = 31;
+        private const string TeleportInteractionLayerName = "Teleport";
+
+        private static void TryReserveTeleportInteractionLayer()
+        {
+            var settingsType = System.AppDomain.CurrentDomain.GetAssemblies()
+                .Select(a => a.GetType("UnityEngine.XR.Interaction.Toolkit.InteractionLayerSettings"))
+                .FirstOrDefault(t => t != null);
+
+            var instance = settingsType
+                ?.GetProperty("Instance", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+                ?.GetValue(null);
+
+            if (instance == null)
+                return; // XRI not installed (or its API moved); Step 1 gates Step 2, so this is the second case
+
+            string current = settingsType.GetMethod("GetLayerNameAt")?.Invoke(instance, new object[] { TeleportInteractionLayer }) as string;
+
+            if (string.Equals(current, TeleportInteractionLayerName, System.StringComparison.OrdinalIgnoreCase))
+                return;
+
+            if (!string.IsNullOrEmpty(current))
+            {
+                Debug.LogWarning($"[EDIA Installer] Interaction layer {TeleportInteractionLayer} is already named " +
+                                 $"'{current}', so it was left untouched. XRI's Starter Assets sample expects " +
+                                 $"\"{TeleportInteractionLayerName}\" there and will keep reporting it in Project " +
+                                 "Validation; rename it yourself if that layer is free to repurpose.");
+                return;
+            }
+
+            settingsType.GetMethod("SetLayerNameAt")?.Invoke(instance, new object[] { TeleportInteractionLayer, TeleportInteractionLayerName });
+            Debug.Log($"[EDIA Installer] Reserved interaction layer {TeleportInteractionLayer} as " +
+                      $"\"{TeleportInteractionLayerName}\", which XRI's teleportation locomotion expects.");
+        }
+
+#endregion
 
         // TextMeshPro's essential resources (its settings asset, shaders and default font) ship inside the
         // TMP/uGUI package as a .unitypackage and must be imported once per project. Until that happens, any
@@ -736,15 +915,24 @@ namespace Edia.Installer
             return _tmpEssentialsImported;
         }
 
+        /// <summary>What the essentials import did, which is what decides whether the sample import has to wait:
+        /// only an import that actually started has an asset import and domain reload still to come.</summary>
+        private enum TmpImportOutcome
+        {
+            AlreadyPresent, // nothing was imported, so nothing has to settle
+            Started,        // TMP's importer ran; its assets and any reload still have to land
+            Unavailable     // TMP's importer could not be resolved or threw; the essentials stay missing
+        }
+
         /// <summary>Runs TMP's own "Import TMP Essential Resources" routine. Resolved by reflection because the
         /// installer must compile in any project, including one where the TMP/uGUI package is absent — a compile
         /// error here would take the whole installer down instead of just this one step.</summary>
-        private static void TryImportTmpEssentials()
+        private static TmpImportOutcome TryImportTmpEssentials()
         {
             if (AreTmpEssentialsImported())
             {
                 Debug.Log("[EDIA Installer] TextMeshPro essential resources already imported.");
-                return;
+                return TmpImportOutcome.AlreadyPresent;
             }
 
             var importerType = System.AppDomain.CurrentDomain.GetAssemblies()
@@ -759,17 +947,19 @@ namespace Edia.Installer
             {
                 Debug.LogWarning("[EDIA Installer] Could not import the TextMeshPro essential resources automatically. " +
                                  "Import them manually via Window > TextMeshPro > Import TMP Essential Resources.");
-                return;
+                return TmpImportOutcome.Unavailable;
             }
 
             try
             {
                 Debug.Log("[EDIA Installer] Importing TextMeshPro essential resources...");
                 importMethod.Invoke(null, new object[] { true, false, false }); // essentials, no examples, silent
+                return TmpImportOutcome.Started;
             }
             catch (System.Exception ex)
             {
                 Debug.LogError("[EDIA Installer] Failed to import the TextMeshPro essential resources:\n" + ex);
+                return TmpImportOutcome.Unavailable;
             }
         }
 
@@ -824,9 +1014,10 @@ namespace Edia.Installer
         // button per item, which is both safer and traceable for the researcher.
         private void DrawProjectValidationSection()
         {
-            DrawIntro("Apply the remaining fixes Unity reports. " +
-                      "Plus the interaction profiles for your headset. Which ones you need depends on " +
-                      "the hardware you target, so use the per-item Fix buttons.");
+            DrawIntro("Enable the plug-in provider for your headset here, and apply the remaining fixes Unity " +
+                      "reports. Which provider and which interaction profiles you need depends on the hardware " +
+                      "you target — Quest through OpenXR, Vive through HTC's own runtime, Varjo through its " +
+                      "plug-in — so the installer leaves that choice to you and Unity's per-item Fix buttons.");
 
             if (GUILayout.Button("Open Project Validation", GUILayout.Height(26)))
             {
