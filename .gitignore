@@ -98,3 +98,6 @@ crashlytics-build.properties
 .idea/**/gradle.xml
 .idea/**/libraries
 
+
+# mcp-unity local settings (per workstation)
+ProjectSettings/McpUnitySettings.json

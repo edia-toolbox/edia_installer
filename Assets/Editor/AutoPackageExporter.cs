@@ -50,6 +50,19 @@ namespace Edia.Installer {
             ExportPackage();
         }
 
+        /// <summary>
+        /// Exports on demand, without waiting for an import of the installer script to trigger it.
+        /// The automatic path depends on Unity deciding to reimport that file, which it will not do when the
+        /// script was edited while the editor was closed and the project has since been opened — leaving the
+        /// committed package silently older than the script it is supposed to ship. Available as a menu item
+        /// and, through -executeMethod, from a batch-mode run.
+        /// </summary>
+        [MenuItem("EDIA/DevTools/Export Installer Package")]
+        public static void ExportNow() {
+            SessionState.SetBool(ExportPendingKey, false);
+            ExportPackage();
+        }
+
         private static void ExportPackage() {
             if (!File.Exists(TargetScriptPath)) {
                 Debug.LogError($"Cannot export package. Target script does not exist: {TargetScriptPath}");
