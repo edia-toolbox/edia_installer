@@ -1162,19 +1162,40 @@ namespace Edia.Installer
                 return;
             }
 
-            var installedNames = new HashSet<string>(_listRequest.Result.Select(p => p.name));
+            var installedPackages = _listRequest.Result.ToDictionary(p => p.name, p => p.version);
             var remaining = new Queue<PackageToInstall>();
 
             foreach (var pkg in _installQueue)
             {
-                if (installedNames.Contains(pkg.PackageName))
+                // The git URL for EDIA packages ends with #branchname. Client.Add() with the same URL (same branch)
+                // is a no-op if already installed, but changing the branch requires a new Add() call.
+                //
+                // We skip only if the package is installed AND the version (branch) matches.
+                // Note: p.version for git packages in Unity usually looks like "https://...#branch" or a commit hash.
+                if (installedPackages.TryGetValue(pkg.PackageName, out var installedVersion))
                 {
-                    Debug.Log($"[EDIA Installer] {pkg.DisplayName} already installed ({pkg.PackageName}), skipping.");
+                    // For git packages, the version string in the manifest/list often contains the branch or hash.
+                    // If the requested branch is part of the installed version string, we consider it a match to avoid redundant installs.
+                    string requestedBranch = pkg.GitUrl.Substring(pkg.GitUrl.LastIndexOf('#') + 1);
+                    
+                    // Unity represents git packages in two ways in the version string:
+                    // 1. "https://github.com/...#branch"
+                    // 2. "branch" (if it's a simple branch name and Unity resolves it so)
+                    // 3. A full commit hash
+                    
+                    // We check if the version is an exact match, or if it ends with #branch, 
+                    // or if the whole version string IS the branch.
+                    bool isMatch = installedVersion == requestedBranch || 
+                                   installedVersion.EndsWith("#" + requestedBranch);
+                    
+                    if (isMatch)
+                    {
+                        Debug.Log($"[EDIA Installer] {pkg.DisplayName} already installed with version {installedVersion}, skipping.");
+                        continue;
+                    }
                 }
-                else
-                {
-                    remaining.Enqueue(pkg);
-                }
+
+                remaining.Enqueue(pkg);
             }
 
             _installQueue = remaining;
