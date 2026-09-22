@@ -61,6 +61,8 @@ namespace Edia.Installer
             public bool Install;
             public string Version = "main";
             public string InstalledVersion;
+            public string InstalledBranch;
+            public bool UserModifiedBranch;
 
             public PackageDef(string key, string displayName, string packageName, string repoName, int indent = 0, params string[] requires)
             {
@@ -119,7 +121,7 @@ namespace Edia.Installer
         const float FieldWidth   = 50f;
         const float IconWidth    = 90f;
         const float IconHeight   = 16f;
-        const float VersionTextWidth = 70f;
+        const float VersionTextWidth = 110f;
 
         // ---------- Step-header styling ----------
         private static readonly Color StepAccent = new Color(0.30f, 0.57f, 0.93f);
@@ -284,12 +286,20 @@ namespace Edia.Installer
             EditorGUI.EndDisabledGroup();
 
             GUILayout.Label("branch", GUILayout.Width(LabelWidth));
-            pkg.Version = GUILayout.TextField(pkg.Version, GUILayout.Width(FieldWidth));
+            string branchInput = GUILayout.TextField(pkg.Version, GUILayout.Width(FieldWidth));
+            if (branchInput != pkg.Version)
+            {
+                pkg.Version = branchInput;
+                pkg.UserModifiedBranch = true;
+            }
 
-            if (IsPackageInstalled(pkg.PackageName, out pkg.InstalledVersion))
+            if (IsPackageInstalled(pkg.PackageName, out pkg.InstalledVersion, out pkg.InstalledBranch))
             {
                 GUILayout.Label(installedIconMsg, GUILayout.Width(IconWidth), GUILayout.Height(IconHeight));
-                GUILayout.Label(pkg.InstalledVersion, GUILayout.Width(VersionTextWidth));
+                string displayVersion = !string.IsNullOrEmpty(pkg.InstalledBranch)
+                    ? $"{pkg.InstalledVersion} ({pkg.InstalledBranch})"
+                    : pkg.InstalledVersion;
+                GUILayout.Label(displayVersion, GUILayout.Width(VersionTextWidth));
             }
             else
             {
@@ -506,7 +516,12 @@ namespace Edia.Installer
         public static void ShowWindow()
         {
             var window = GetWindow<EdiaInstaller>("EDIA Installer");
-            window.minSize = new Vector2(560, 300);
+            window.minSize = new Vector2(580, 300);
+        }
+
+        private void OnEnable()
+        {
+            InvalidateStateCache();
         }
 
         // Packages and samples can also change while the window sits in the background (Package Manager, a
@@ -645,6 +660,7 @@ namespace Edia.Installer
 
         private static double _stateCacheStamp = double.NegativeInfinity;
         private static readonly Dictionary<string, string> _packageVersions = new Dictionary<string, string>();
+        private static readonly Dictionary<string, string> _packageBranches = new Dictionary<string, string>();
         private static readonly Dictionary<string, bool> _samplesImported = new Dictionary<string, bool>();
         private static bool _tmpEssentialsImported;
 
@@ -663,10 +679,25 @@ namespace Edia.Installer
             _stateCacheStamp = EditorApplication.timeSinceStartup;
 
             _packageVersions.Clear();
+            _packageBranches.Clear();
+
             foreach (var (package, _) in XrPackages)
                 _packageVersions[package] = ProbePackageVersion(package);
+
             foreach (var pkg in _ediaPackages)
-                _packageVersions[pkg.PackageName] = ProbePackageVersion(pkg.PackageName);
+            {
+                string version = ProbePackageVersion(pkg.PackageName);
+                _packageVersions[pkg.PackageName] = version;
+
+                string branch = ProbePackageBranch(pkg.PackageName);
+                _packageBranches[pkg.PackageName] = branch;
+                pkg.InstalledBranch = branch;
+
+                if (!string.IsNullOrEmpty(branch) && !pkg.UserModifiedBranch)
+                {
+                    pkg.Version = branch;
+                }
+            }
 
             _samplesImported.Clear();
             foreach (var (package, sample, _) in RequiredSamples)
@@ -681,6 +712,55 @@ namespace Edia.Installer
         {
             var info = UnityEditor.PackageManager.PackageInfo.FindForAssetPath("Packages/" + packageName);
             return info?.version;
+        }
+
+        private static string ExtractBranchFromUrl(string url)
+        {
+            if (string.IsNullOrEmpty(url)) return null;
+            int hashIdx = url.LastIndexOf('#');
+            if (hashIdx >= 0 && hashIdx < url.Length - 1)
+            {
+                return url.Substring(hashIdx + 1).Trim();
+            }
+            return null;
+        }
+
+        private static string ProbeManifestBranch(string packageName)
+        {
+            try
+            {
+                string manifestPath = "Packages/manifest.json";
+                if (!System.IO.File.Exists(manifestPath)) return null;
+
+                string json = System.IO.File.ReadAllText(manifestPath);
+                string pattern = $"\"{System.Text.RegularExpressions.Regex.Escape(packageName)}\"\\s*:\\s*\"([^\"]+)\"";
+                var match = System.Text.RegularExpressions.Regex.Match(json, pattern);
+                if (match.Success)
+                {
+                    return ExtractBranchFromUrl(match.Groups[1].Value);
+                }
+            }
+            catch
+            {
+                // Ignore file read/parse errors
+            }
+            return null;
+        }
+
+        private static string ProbePackageBranch(string packageName)
+        {
+            var info = UnityEditor.PackageManager.PackageInfo.FindForAssetPath("Packages/" + packageName);
+            if (info != null)
+            {
+                if (info.git != null && !string.IsNullOrEmpty(info.git.revision))
+                    return info.git.revision;
+
+                string branch = ExtractBranchFromUrl(info.packageId);
+                if (!string.IsNullOrEmpty(branch))
+                    return branch;
+            }
+
+            return ProbeManifestBranch(packageName);
         }
 
         private static bool ProbeSampleImported(string packageName, string sampleName)
@@ -702,10 +782,15 @@ namespace Edia.Installer
 
         private static bool IsPackageInstalled(string packageName)
         {
-            return IsPackageInstalled(packageName, out _);
+            return IsPackageInstalled(packageName, out _, out _);
         }
 
         private static bool IsPackageInstalled(string packageName, out string version)
+        {
+            return IsPackageInstalled(packageName, out version, out _);
+        }
+
+        private static bool IsPackageInstalled(string packageName, out string version, out string branch)
         {
             RefreshStateCacheIfStale();
 
@@ -714,6 +799,12 @@ namespace Edia.Installer
             {
                 version = ProbePackageVersion(packageName);
                 _packageVersions[packageName] = version;
+            }
+
+            if (!_packageBranches.TryGetValue(packageName, out branch))
+            {
+                branch = ProbePackageBranch(packageName);
+                _packageBranches[packageName] = branch;
             }
 
             return version != null;
@@ -1162,7 +1253,7 @@ namespace Edia.Installer
                 return;
             }
 
-            var installedPackages = _listRequest.Result.ToDictionary(p => p.name, p => p.version);
+            var installedPackages = _listRequest.Result.ToDictionary(p => p.name, p => p);
             var remaining = new Queue<PackageToInstall>();
 
             foreach (var pkg in _installQueue)
@@ -1170,27 +1261,32 @@ namespace Edia.Installer
                 // The git URL for EDIA packages ends with #branchname. Client.Add() with the same URL (same branch)
                 // is a no-op if already installed, but changing the branch requires a new Add() call.
                 //
-                // We skip only if the package is installed AND the version (branch) matches.
-                // Note: p.version for git packages in Unity usually looks like "https://...#branch" or a commit hash.
-                if (installedPackages.TryGetValue(pkg.PackageName, out var installedVersion))
+                // We skip only if the package is installed AND the branch matches.
+                if (installedPackages.TryGetValue(pkg.PackageName, out var packageInfo))
                 {
-                    // For git packages, the version string in the manifest/list often contains the branch or hash.
-                    // If the requested branch is part of the installed version string, we consider it a match to avoid redundant installs.
-                    string requestedBranch = pkg.GitUrl.Substring(pkg.GitUrl.LastIndexOf('#') + 1);
-                    
-                    // Unity represents git packages in two ways in the version string:
-                    // 1. "https://github.com/...#branch"
-                    // 2. "branch" (if it's a simple branch name and Unity resolves it so)
-                    // 3. A full commit hash
-                    
-                    // We check if the version is an exact match, or if it ends with #branch, 
-                    // or if the whole version string IS the branch.
-                    bool isMatch = installedVersion == requestedBranch || 
-                                   installedVersion.EndsWith("#" + requestedBranch);
-                    
+                    string requestedBranch = ExtractBranchFromUrl(pkg.GitUrl);
+                    string installedBranch = null;
+
+                    if (packageInfo.git != null && !string.IsNullOrEmpty(packageInfo.git.revision))
+                    {
+                        installedBranch = packageInfo.git.revision;
+                    }
+                    else if (!string.IsNullOrEmpty(packageInfo.packageId))
+                    {
+                        installedBranch = ExtractBranchFromUrl(packageInfo.packageId);
+                    }
+
+                    if (string.IsNullOrEmpty(installedBranch))
+                    {
+                        installedBranch = ProbeManifestBranch(pkg.PackageName);
+                    }
+
+                    bool isMatch = !string.IsNullOrEmpty(installedBranch) &&
+                                   string.Equals(installedBranch, requestedBranch, System.StringComparison.OrdinalIgnoreCase);
+
                     if (isMatch)
                     {
-                        Debug.Log($"[EDIA Installer] {pkg.DisplayName} already installed with version {installedVersion}, skipping.");
+                        Debug.Log($"[EDIA Installer] {pkg.DisplayName} already installed on branch {installedBranch}, skipping.");
                         continue;
                     }
                 }
